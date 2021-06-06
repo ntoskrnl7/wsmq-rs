@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+import "./status.proto";
+
+enum Type {
+    ONESHOT = 0;
+    BEGIN = 1;
+    PROCESS = 2;
+    END = 3;
+}
+
+enum Compression {
+    NONE = 0;
+    SNAPPY = 1;
+}
+
+message Header {
+    Type type = 1;
+    bytes uuid = 2;
+}
+
+message Oneshot {
+    Type type = 1 [default = ONESHOT];
+    bytes uuid = 2;
+    bytes message = 3;
+}
+
+message Begin {
+    Type type = 1 [default = BEGIN];
+    bytes uuid = 2;
+    Compression compression = 3;
+    uint64 length = 4;
+}
+
+message Process {
+    Type type = 1 [default = PROCESS];
+    bytes uuid = 2;
+    uint64 seq = 3;
+    bytes message = 4;
+}
+
+message End {
+    Type type = 1 [default = END];
+    bytes uuid = 2;
+}
+
+message BeginReply {
+    Status status = 3;
+    bytes generated_uuid = 4;
+}

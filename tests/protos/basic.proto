@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+message BasicMessage {
+    string value1 = 1;
+    int32 value2 = 2;
+    bytes value3 = 3;
+}
+
+message BasicReplyMessage {
+    bytes value1 = 1;
+    int32 value2 = 2;
+    string value3 = 3;
+}
