@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Read;
 use std::sync::Mutex;
 use std::{net::SocketAddr, sync::Arc};
 
@@ -7,6 +8,7 @@ use futures::StreamExt;
 use futures::TryStreamExt;
 use futures_channel::mpsc::unbounded;
 use protobuf::Message;
+use uuid::Uuid;
 
 use crate::protos::message;
 use crate::response::{Response, ResponseShared};
@@ -55,6 +57,12 @@ impl<OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 
     define_method!(on_connect, OnConnect);
 }
 
+struct Buffer {
+    compression: crate::protos::message::Compression,
+    //total_length: u64,
+    buffer: Vec<u8>,
+}
+
 pub async fn run<
     OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static,
 >(
@@ -81,6 +89,7 @@ pub async fn run<
                                 responses: Arc::new(Mutex::new(HashMap::new())),
                                 tx,
                             };
+                            let buffers = Arc::new(Mutex::new(HashMap::new()));
                             if let Some(ref on_connect) = config.on_connect {
                                 on_connect(addr);
                             }
@@ -104,9 +113,71 @@ pub async fn run<
                                                     );
                                                 }
                                             }
-                                            message::Type::BEGIN => {}
-                                            message::Type::PROCESS => {}
-                                            message::Type::END => {}
+                                            message::Type::BEGIN => {
+                                                if let Ok(begin) =
+                                                    message::Begin::parse_from_bytes(data)
+                                                {
+                                                    println!("begin : {:?}", begin);
+                                                    if let Ok(uuid) =
+                                                        Uuid::from_slice(begin.get_uuid())
+                                                    {
+                                                        buffers.lock().unwrap().insert(
+                                                            uuid,
+                                                            Buffer {
+                                                                compression: begin
+                                                                    .get_compression(),
+                                                                //total_length: begin.get_length(),
+                                                                buffer: Vec::new(),
+                                                            },
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            message::Type::PROCESS => {
+                                                if let Ok(process) =
+                                                    message::Process::parse_from_bytes(data)
+                                                {
+                                                    if let Ok(uuid) =
+                                                        Uuid::from_slice(process.get_uuid())
+                                                    {
+                                                        if let Some(ref mut buffer) =
+                                                            buffers.lock().unwrap().get_mut(&uuid)
+                                                        {
+                                                            buffer.buffer.extend(process.get_message());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            message::Type::END => {
+                                                if let Ok(end) =
+                                                    message::End::parse_from_bytes(data)
+                                                {
+                                                    if let Ok(uuid) =
+                                                        Uuid::from_slice(end.get_uuid())
+                                                    {
+                                                        if let Some(ref mut buffer) =
+                                                            buffers.lock().unwrap().remove(&uuid)
+                                                        {
+                                                            if buffer.compression == crate::protos::message::Compression::SNAPPY {
+                                                                let mut decomp = vec![];
+                                                                match snap::read::FrameDecoder::new(&buffer.buffer[..]).read_to_end(&mut decomp) {
+                                                                    Ok(_) => {
+                                                                        (config.on_message)(
+                                                                            addr,
+                                                                            Response::new(uuid, decomp, &shared),
+                                                                        );
+                                                                    },
+                                                                    Err(err) => {
+                                                                        if let Some(ref on_error) = config.on_error {
+                                                                            on_error(Box::new(err));
+                                                                        }
+                                                                    }
+                                                                }                                                                
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         },
                                         Err(err) => {
                                             if let Some(ref on_error) = config.on_error {

@@ -132,9 +132,6 @@ impl ResponseShared {
         }
     }
 
-    pub fn new_response<'a>(&'a self, uuid: Uuid, data: Vec<u8>) -> Response<'a> {
-        Response::new(uuid, data, self)
-    }
     pub fn send(&self, uuid: Uuid, message: Vec<u8>) -> Result<ResponseFuture> {
         let mut oneshot = protos::message::Oneshot::new();
         oneshot.set_field_type(Type::ONESHOT);
@@ -156,10 +153,77 @@ impl ResponseShared {
 
     pub fn send_large_message(
         &self,
-        _uuid: Uuid,
-        _message: &dyn protobuf::Message,
+        uuid: Uuid,
+        message: &dyn protobuf::Message,
     ) -> Result<ResponseFuture> {
-        Err(Error::InvalidParameters())
+        let mut begin = protos::message::Begin::new();
+        begin.set_field_type(Type::BEGIN);
+        begin.set_uuid(uuid.as_bytes().to_vec());
+        begin.set_compression(protos::message::Compression::SNAPPY);
+        let mut wtr = snap::write::FrameEncoder::new(vec![]);
+        match message.write_to_writer(&mut wtr) {
+            Ok(_) => match wtr.into_inner() {
+                Ok(mut message) => {
+                    begin.set_length(message.len() as u64);
+                    match begin.write_to_bytes() {
+                        Ok(msg) => {
+                            match self.tx.unbounded_send(
+                                tokio_tungstenite::tungstenite::Message::binary(msg),
+                            ) {
+                                Ok(_) => {
+                                    let mut seq = 0;
+                                    let mut process = protos::message::Process::new();
+                                    process.set_field_type(Type::PROCESS);
+                                    process.set_uuid(begin.get_uuid().to_vec());
+                                    for chunk in message.chunks_mut(self.bandwidth) {
+                                        process.set_seq(seq);
+                                        process.set_message(chunk.to_vec());
+                                        match process.write_to_bytes() {
+                                            Ok(msg) => match self.tx.unbounded_send(
+                                                tokio_tungstenite::tungstenite::Message::binary(
+                                                    msg,
+                                                ),
+                                            ) {
+                                                Ok(_) => {
+                                                    seq += 1;
+                                                }
+                                                Err(err) => {
+                                                    return Err(Error::InternalError(Box::new(err)))
+                                                }
+                                            },
+                                            Err(err) => {
+                                                return Err(Error::InternalError(Box::new(err)))
+                                            }
+                                        }
+                                    }
+                                    let mut end = protos::message::End::new();
+                                    end.set_field_type(Type::END);
+                                    end.set_uuid(begin.get_uuid().to_vec());
+                                    match end.write_to_bytes() {
+                                        Ok(msg) => match self.tx.unbounded_send(
+                                            tokio_tungstenite::tungstenite::Message::binary(msg),
+                                        ) {
+                                            Ok(_) => {}
+                                            Err(err) => {
+                                                return Err(Error::InternalError(Box::new(err)))
+                                            }
+                                        },
+                                        Err(err) => {
+                                            return Err(Error::InternalError(Box::new(err)))
+                                        }
+                                    }
+                                    Ok(ResponseFuture::new(uuid, self))
+                                }
+                                Err(err) => return Err(Error::InternalError(Box::new(err))),
+                            }
+                        }
+                        Err(err) => return Err(Error::InternalError(Box::new(err))),
+                    }
+                }
+                Err(err) => return Err(Error::InternalError(Box::new(err))),
+            },
+            Err(err) => return Err(Error::InternalError(Box::new(err))),
+        }
     }
 
     pub fn send_message(

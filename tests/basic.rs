@@ -50,7 +50,7 @@ macro_rules! define_test_future {
 async fn basic_test() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
         async fn test_client() {
-            let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:9999").unwrap())
+            let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65000").unwrap())
                 .await
                 .expect("[client] Failed to client::connect");
             let mut message = protos::basic::BasicMessage::new();
@@ -72,7 +72,7 @@ async fn basic_test() {
             println!("[client] Done");
         }
         wsmq_rs::server::run(
-            &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
+            &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
             server::Config::new(1024 * 1024 * 16, move |addr, res| {
                 let mut message = res
                     .to_message::<protos::basic::BasicMessage>()
@@ -99,9 +99,7 @@ async fn basic_test() {
     });
     match tokio::time::timeout(Duration::from_secs(10), f).await {
         Ok(_) => {}
-        Err(err) => {
-            panic!("timeouted : {}", err)
-        }
+        Err(err) => panic!("timeouted : {}", err),
     };
 }
 
@@ -110,7 +108,7 @@ async fn basic_test_err() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
         async fn test_client() {
             // connect to server
-            match wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:9999").unwrap()).await {
+            match wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65001").unwrap()).await {
                 Ok(client) => {
                     // generate message
                     let mut msg = protos::basic::BasicMessage::new();
@@ -144,7 +142,7 @@ async fn basic_test_err() {
         }
 
         if let Err(err) = wsmq_rs::server::run(
-            &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
+            &SocketAddr::from_str("0.0.0.0:65001").unwrap(),
             server::Config::new(1024 * 1024 * 16, move |addr, res| match res
                 .to_message::<protos::basic::BasicMessage>(
             ) {
@@ -190,9 +188,7 @@ async fn basic_test_err() {
 
     match tokio::time::timeout(Duration::from_secs(10), f).await {
         Ok(_) => {}
-        Err(err) => {
-            panic!("timeouted : {}", err)
-        }
+        Err(err) => panic!("timeouted : {}", err),
     };
 }
 
@@ -202,7 +198,7 @@ async fn complex_test() {
         async fn test_client() {
             // connect to server
             match wsmq_rs::client::connect_with_config(
-                &Url::parse("ws://127.0.0.1:9999").unwrap(),
+                &Url::parse("ws://127.0.0.1:65002").unwrap(),
                 Some(client::Config {
                     bandwidth: 1024 * 1024 * 16,
                 }),
@@ -321,12 +317,10 @@ async fn complex_test() {
                                                 ),
                                             }
                                         }
-                                        Err(err) => {
-                                            println!(
-                                                "[client] Failed to to_message : {}",
-                                                err.cause()
-                                            )
-                                        }
+                                        Err(err) => println!(
+                                            "[client] Failed to to_message : {}",
+                                            err.cause()
+                                        ),
                                     }
                                 }
                                 Err(err) => {
@@ -350,7 +344,7 @@ async fn complex_test() {
         let client_map_on_message = client_map.clone();
         let client_map_on_connected = client_map.clone();
         if let Err(err) = wsmq_rs::server::run(
-            &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
+            &SocketAddr::from_str("0.0.0.0:65002").unwrap(),
             server::Config::new(1024 * 1024 * 16, move |addr, res| {
                 let client_map = client_map_on_message.clone();
                 match res.to_message::<protos::basic::BasicMessage>() {
@@ -412,8 +406,87 @@ async fn complex_test() {
     });
     match tokio::time::timeout(Duration::from_secs(20), f).await {
         Ok(_) => {}
-        Err(err) => {
-            panic!("timeouted : {}", err)
+        Err(err) => panic!("timeouted : {}", err),
+    };
+}
+
+#[tokio::test]
+async fn large_message_test() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+        async fn test_client() {
+            let client = wsmq_rs::client::connect_with_config(
+                &Url::parse("ws://127.0.0.1:65000").unwrap(),
+                Some(wsmq_rs::client::Config { bandwidth: 1024 }),
+            )
+            .await
+            .expect("[client] Failed to client::connect");
+            let mut message = protos::basic::BasicMessage::new();
+            message.set_caption("client ping".to_string());
+            message.set_seq(1);
+            message.set_payload(
+                (0..1024 * 1024 * 16)
+                    .map(|f| (f % 255) as u8)
+                    .collect::<Vec<u8>>(),
+            );
+            message.set_need_to_rely(true);
+            println!(
+                "[client] send_message({}, {})",
+                message.caption,
+                message.payload.len()
+            );
+            let res = client
+                .send_message(&message)
+                .unwrap()
+                .await
+                .expect("Failed to send_message");
+            let message = res
+                .to_message::<protos::basic::BasicMessage>()
+                .expect("[client] Failed to to_message");
+            println!("[client] Message received ({:?})", message);
+            assert_eq!(message.get_caption(), "server pong");
+            assert_eq!(message.get_seq(), 1);
+            println!("[client] Done");
         }
+        wsmq_rs::server::run(
+            &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
+            server::Config::new(1024 * 1024 * 16, move |addr, res| {
+                let mut message = res
+                    .to_message::<protos::basic::BasicMessage>()
+                    .expect("[server] Failed to to_message");
+                println!(
+                    "[server] message received({}, {}) : {} ",
+                    message.caption,
+                    message.payload.len(),
+                    addr
+                );
+                assert_eq!(message.get_caption(), "client ping");
+                assert_eq!(message.get_seq(), 1);
+                message.set_caption("server pong".to_string());
+                // message.set_payload(vec![0]); // * server (begin,process,end) -> client
+                block_on(res.send_message(&message))
+                    .expect("[server] Failed to reply send_message");
+                println!(
+                    "[server] send_message({}, {}) : {} ",
+                    message.caption,
+                    message.payload.len(),
+                    addr
+                );
+                println!("[server] Done");
+            })
+            .on_started(Box::new(move || {
+                let svc = svc.clone();
+                rt.spawn(async move {
+                    test_client().await;
+                    svc.lock().unwrap().stop().unwrap();
+                });
+            })),
+        )
+        .await
+        .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(60), f).await {
+        Ok(_) => {}
+        Err(err) => panic!("timeouted : {}", err),
     };
 }
