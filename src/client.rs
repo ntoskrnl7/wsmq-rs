@@ -1,13 +1,16 @@
 use crate::{
     error::Error,
     protos::{self},
-    response::{ResponseShared, ResponseFuture},
+    response::{ResponseFuture, ResponseShared},
     Result,
 };
 use futures::{future, pin_mut, StreamExt};
 use protobuf::Message;
-use std::{collections::HashMap, sync::Mutex};
-use std::{io::Write, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::connect_async;
 use url::Url;
 use uuid::Uuid;
@@ -32,43 +35,45 @@ pub async fn connect_with_config(url: &Url, config: Option<Config>) -> Result<Cl
                 tx,
             });
             let shared2 = shared.clone();
-            tokio::spawn(async move {
-                let ws_read = read.for_each(|message| async {
-                    match message {
-                        Ok(message) => {
-                            match protos::message::Oneshot::parse_from_bytes(&message.into_data()) {
-                                Ok(oneshot) => match Uuid::from_slice(oneshot.get_uuid()) {
-                                    Ok(uuid) => {
-                                        if let Ok(mut shared) = shared2.responses.lock() {
-                                            if let Some(status) = shared.remove(&uuid) {
-                                                match status {
-                                                    crate::response::Status::None => {}
-                                                    crate::response::Status::Started(waker) => {
-                                                        waker.wake();
-                                                        shared.insert(
-                                                            uuid,
-                                                            crate::response::Status::Completed(
-                                                                oneshot.message,
-                                                            ),
-                                                        );
+            Ok(Client {
+                thread: tokio::spawn(async move {
+                    let ws_read = read.for_each(|message| async {
+                        match message {
+                            Ok(message) => {
+                                match protos::message::Oneshot::parse_from_bytes(
+                                    &message.into_data(),
+                                ) {
+                                    Ok(oneshot) => match Uuid::from_slice(oneshot.get_uuid()) {
+                                        Ok(uuid) => {
+                                            if let Ok(mut shared) = shared2.responses.lock() {
+                                                if let Some(status) = shared.remove(&uuid) {
+                                                    match status {
+                                                        crate::response::Status::None => {}
+                                                        crate::response::Status::Started(waker) => {
+                                                            shared.insert(
+                                                                uuid,
+                                                                crate::response::Status::Completed(
+                                                                    oneshot.message,
+                                                                ),
+                                                            );
+                                                            waker.wake();
+                                                        }
+                                                        crate::response::Status::Completed(_) => {}
                                                     }
-                                                    crate::response::Status::Completed(_) => {}
                                                 }
                                             }
                                         }
-                                    }
+                                        Err(_) => {}
+                                    },
                                     Err(_) => {}
-                                },
-                                Err(_) => {}
+                                }
                             }
+                            Err(_) => {}
                         }
-                        Err(_) => {}
-                    }
-                });
-                pin_mut!(rx_to_ws_write, ws_read);
-                future::select(rx_to_ws_write, ws_read).await;
-            });
-            Ok(Client {
+                    });
+                    pin_mut!(rx_to_ws_write, ws_read);
+                    future::select(rx_to_ws_write, ws_read).await;
+                }),
                 shared: shared.clone(),
             })
         }
@@ -77,10 +82,21 @@ pub async fn connect_with_config(url: &Url, config: Option<Config>) -> Result<Cl
 }
 
 pub struct Client {
+    thread: JoinHandle<()>,
     shared: Arc<ResponseShared>,
 }
 
+impl Drop for Client {
+    fn drop(&mut self) {
+        self.thread.abort();
+    }
+}
+
 impl Client {
+    pub fn close(&self) {
+        self.thread.abort();
+    }
+
     pub fn send(&self, message: Vec<u8>) -> Result<ResponseFuture> {
         self.shared.send(self.shared.generate_uuid(), message)
     }
@@ -94,15 +110,4 @@ impl Client {
 #[derive(Debug)]
 pub struct Config {
     pub bandwidth: usize,
-}
-pub struct LargeMessage {}
-
-impl Write for LargeMessage {
-    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-        todo!()
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        todo!()
-    }
 }

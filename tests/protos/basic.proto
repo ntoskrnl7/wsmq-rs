@@ -1,13 +1,8 @@
 syntax = "proto3";
 
 message BasicMessage {
-    string value1 = 1;
-    int32 value2 = 2;
-    bytes value3 = 3;
-}
-
-message BasicReplyMessage {
-    bytes value1 = 1;
-    int32 value2 = 2;
-    string value3 = 3;
+    bool need_to_rely = 1;
+    string caption = 2;
+    int32 seq = 3;
+    bytes payload = 4;
 }

@@ -26,9 +26,10 @@
 #[derive(PartialEq,Clone,Default)]
 pub struct BasicMessage {
     // message fields
-    pub value1: ::std::string::String,
-    pub value2: i32,
-    pub value3: ::std::vec::Vec<u8>,
+    pub need_to_rely: bool,
+    pub caption: ::std::string::String,
+    pub seq: i32,
+    pub payload: ::std::vec::Vec<u8>,
     // special fields
     pub unknown_fields: ::protobuf::UnknownFields,
     pub cached_size: ::protobuf::CachedSize,
@@ -45,71 +46,86 @@ impl BasicMessage {
         ::std::default::Default::default()
     }
 
-    // string value1 = 1;
+    // bool need_to_rely = 1;
 
 
-    pub fn get_value1(&self) -> &str {
-        &self.value1
+    pub fn get_need_to_rely(&self) -> bool {
+        self.need_to_rely
     }
-    pub fn clear_value1(&mut self) {
-        self.value1.clear();
+    pub fn clear_need_to_rely(&mut self) {
+        self.need_to_rely = false;
     }
 
     // Param is passed by value, moved
-    pub fn set_value1(&mut self, v: ::std::string::String) {
-        self.value1 = v;
+    pub fn set_need_to_rely(&mut self, v: bool) {
+        self.need_to_rely = v;
+    }
+
+    // string caption = 2;
+
+
+    pub fn get_caption(&self) -> &str {
+        &self.caption
+    }
+    pub fn clear_caption(&mut self) {
+        self.caption.clear();
+    }
+
+    // Param is passed by value, moved
+    pub fn set_caption(&mut self, v: ::std::string::String) {
+        self.caption = v;
     }
 
     // Mutable pointer to the field.
     // If field is not initialized, it is initialized with default value first.
-    pub fn mut_value1(&mut self) -> &mut ::std::string::String {
-        &mut self.value1
+    pub fn mut_caption(&mut self) -> &mut ::std::string::String {
+        &mut self.caption
     }
 
     // Take field
-    pub fn take_value1(&mut self) -> ::std::string::String {
-        ::std::mem::replace(&mut self.value1, ::std::string::String::new())
+    pub fn take_caption(&mut self) -> ::std::string::String {
+        ::std::mem::replace(&mut self.caption, ::std::string::String::new())
     }
 
-    // int32 value2 = 2;
+    // int32 seq = 3;
 
 
-    pub fn get_value2(&self) -> i32 {
-        self.value2
+    pub fn get_seq(&self) -> i32 {
+        self.seq
     }
-    pub fn clear_value2(&mut self) {
-        self.value2 = 0;
-    }
-
-    // Param is passed by value, moved
-    pub fn set_value2(&mut self, v: i32) {
-        self.value2 = v;
-    }
-
-    // bytes value3 = 3;
-
-
-    pub fn get_value3(&self) -> &[u8] {
-        &self.value3
-    }
-    pub fn clear_value3(&mut self) {
-        self.value3.clear();
+    pub fn clear_seq(&mut self) {
+        self.seq = 0;
     }
 
     // Param is passed by value, moved
-    pub fn set_value3(&mut self, v: ::std::vec::Vec<u8>) {
-        self.value3 = v;
+    pub fn set_seq(&mut self, v: i32) {
+        self.seq = v;
+    }
+
+    // bytes payload = 4;
+
+
+    pub fn get_payload(&self) -> &[u8] {
+        &self.payload
+    }
+    pub fn clear_payload(&mut self) {
+        self.payload.clear();
+    }
+
+    // Param is passed by value, moved
+    pub fn set_payload(&mut self, v: ::std::vec::Vec<u8>) {
+        self.payload = v;
     }
 
     // Mutable pointer to the field.
     // If field is not initialized, it is initialized with default value first.
-    pub fn mut_value3(&mut self) -> &mut ::std::vec::Vec<u8> {
-        &mut self.value3
+    pub fn mut_payload(&mut self) -> &mut ::std::vec::Vec<u8> {
+        &mut self.payload
     }
 
     // Take field
-    pub fn take_value3(&mut self) -> ::std::vec::Vec<u8> {
-        ::std::mem::replace(&mut self.value3, ::std::vec::Vec::new())
+    pub fn take_payload(&mut self) -> ::std::vec::Vec<u8> {
+        ::std::mem::replace(&mut self.payload, ::std::vec::Vec::new())
     }
 }
 
@@ -123,17 +139,24 @@ impl ::protobuf::Message for BasicMessage {
             let (field_number, wire_type) = is.read_tag_unpack()?;
             match field_number {
                 1 => {
-                    ::protobuf::rt::read_singular_proto3_string_into(wire_type, is, &mut self.value1)?;
+                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
+                        return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
+                    }
+                    let tmp = is.read_bool()?;
+                    self.need_to_rely = tmp;
                 },
                 2 => {
+                    ::protobuf::rt::read_singular_proto3_string_into(wire_type, is, &mut self.caption)?;
+                },
+                3 => {
                     if wire_type != ::protobuf::wire_format::WireTypeVarint {
                         return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
                     }
                     let tmp = is.read_int32()?;
-                    self.value2 = tmp;
+                    self.seq = tmp;
                 },
-                3 => {
-                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.value3)?;
+                4 => {
+                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.payload)?;
                 },
                 _ => {
                     ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
@@ -147,14 +170,17 @@ impl ::protobuf::Message for BasicMessage {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u32 {
         let mut my_size = 0;
-        if !self.value1.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.value1);
+        if self.need_to_rely != false {
+            my_size += 2;
         }
-        if self.value2 != 0 {
-            my_size += ::protobuf::rt::value_size(2, self.value2, ::protobuf::wire_format::WireTypeVarint);
+        if !self.caption.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.caption);
         }
-        if !self.value3.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(3, &self.value3);
+        if self.seq != 0 {
+            my_size += ::protobuf::rt::value_size(3, self.seq, ::protobuf::wire_format::WireTypeVarint);
+        }
+        if !self.payload.is_empty() {
+            my_size += ::protobuf::rt::bytes_size(4, &self.payload);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
         self.cached_size.set(my_size);
@@ -162,14 +188,17 @@ impl ::protobuf::Message for BasicMessage {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::ProtobufResult<()> {
-        if !self.value1.is_empty() {
-            os.write_string(1, &self.value1)?;
+        if self.need_to_rely != false {
+            os.write_bool(1, self.need_to_rely)?;
         }
-        if self.value2 != 0 {
-            os.write_int32(2, self.value2)?;
+        if !self.caption.is_empty() {
+            os.write_string(2, &self.caption)?;
         }
-        if !self.value3.is_empty() {
-            os.write_bytes(3, &self.value3)?;
+        if self.seq != 0 {
+            os.write_int32(3, self.seq)?;
+        }
+        if !self.payload.is_empty() {
+            os.write_bytes(4, &self.payload)?;
         }
         os.write_unknown_fields(self.get_unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -209,20 +238,25 @@ impl ::protobuf::Message for BasicMessage {
         static descriptor: ::protobuf::rt::LazyV2<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::LazyV2::INIT;
         descriptor.get(|| {
             let mut fields = ::std::vec::Vec::new();
+            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBool>(
+                "need_to_rely",
+                |m: &BasicMessage| { &m.need_to_rely },
+                |m: &mut BasicMessage| { &mut m.need_to_rely },
+            ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeString>(
-                "value1",
-                |m: &BasicMessage| { &m.value1 },
-                |m: &mut BasicMessage| { &mut m.value1 },
+                "caption",
+                |m: &BasicMessage| { &m.caption },
+                |m: &mut BasicMessage| { &mut m.caption },
             ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeInt32>(
-                "value2",
-                |m: &BasicMessage| { &m.value2 },
-                |m: &mut BasicMessage| { &mut m.value2 },
+                "seq",
+                |m: &BasicMessage| { &m.seq },
+                |m: &mut BasicMessage| { &mut m.seq },
             ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBytes>(
-                "value3",
-                |m: &BasicMessage| { &m.value3 },
-                |m: &mut BasicMessage| { &mut m.value3 },
+                "payload",
+                |m: &BasicMessage| { &m.payload },
+                |m: &mut BasicMessage| { &mut m.payload },
             ));
             ::protobuf::reflect::MessageDescriptor::new_pb_name::<BasicMessage>(
                 "BasicMessage",
@@ -240,9 +274,10 @@ impl ::protobuf::Message for BasicMessage {
 
 impl ::protobuf::Clear for BasicMessage {
     fn clear(&mut self) {
-        self.value1.clear();
-        self.value2 = 0;
-        self.value3.clear();
+        self.need_to_rely = false;
+        self.caption.clear();
+        self.seq = 0;
+        self.payload.clear();
         self.unknown_fields.clear();
     }
 }
@@ -259,249 +294,12 @@ impl ::protobuf::reflect::ProtobufValue for BasicMessage {
     }
 }
 
-#[derive(PartialEq,Clone,Default)]
-pub struct BasicReplyMessage {
-    // message fields
-    pub value1: ::std::vec::Vec<u8>,
-    pub value2: i32,
-    pub value3: ::std::string::String,
-    // special fields
-    pub unknown_fields: ::protobuf::UnknownFields,
-    pub cached_size: ::protobuf::CachedSize,
-}
-
-impl<'a> ::std::default::Default for &'a BasicReplyMessage {
-    fn default() -> &'a BasicReplyMessage {
-        <BasicReplyMessage as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl BasicReplyMessage {
-    pub fn new() -> BasicReplyMessage {
-        ::std::default::Default::default()
-    }
-
-    // bytes value1 = 1;
-
-
-    pub fn get_value1(&self) -> &[u8] {
-        &self.value1
-    }
-    pub fn clear_value1(&mut self) {
-        self.value1.clear();
-    }
-
-    // Param is passed by value, moved
-    pub fn set_value1(&mut self, v: ::std::vec::Vec<u8>) {
-        self.value1 = v;
-    }
-
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_value1(&mut self) -> &mut ::std::vec::Vec<u8> {
-        &mut self.value1
-    }
-
-    // Take field
-    pub fn take_value1(&mut self) -> ::std::vec::Vec<u8> {
-        ::std::mem::replace(&mut self.value1, ::std::vec::Vec::new())
-    }
-
-    // int32 value2 = 2;
-
-
-    pub fn get_value2(&self) -> i32 {
-        self.value2
-    }
-    pub fn clear_value2(&mut self) {
-        self.value2 = 0;
-    }
-
-    // Param is passed by value, moved
-    pub fn set_value2(&mut self, v: i32) {
-        self.value2 = v;
-    }
-
-    // string value3 = 3;
-
-
-    pub fn get_value3(&self) -> &str {
-        &self.value3
-    }
-    pub fn clear_value3(&mut self) {
-        self.value3.clear();
-    }
-
-    // Param is passed by value, moved
-    pub fn set_value3(&mut self, v: ::std::string::String) {
-        self.value3 = v;
-    }
-
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_value3(&mut self) -> &mut ::std::string::String {
-        &mut self.value3
-    }
-
-    // Take field
-    pub fn take_value3(&mut self) -> ::std::string::String {
-        ::std::mem::replace(&mut self.value3, ::std::string::String::new())
-    }
-}
-
-impl ::protobuf::Message for BasicReplyMessage {
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::ProtobufResult<()> {
-        while !is.eof()? {
-            let (field_number, wire_type) = is.read_tag_unpack()?;
-            match field_number {
-                1 => {
-                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.value1)?;
-                },
-                2 => {
-                    if wire_type != ::protobuf::wire_format::WireTypeVarint {
-                        return ::std::result::Result::Err(::protobuf::rt::unexpected_wire_type(wire_type));
-                    }
-                    let tmp = is.read_int32()?;
-                    self.value2 = tmp;
-                },
-                3 => {
-                    ::protobuf::rt::read_singular_proto3_string_into(wire_type, is, &mut self.value3)?;
-                },
-                _ => {
-                    ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u32 {
-        let mut my_size = 0;
-        if !self.value1.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.value1);
-        }
-        if self.value2 != 0 {
-            my_size += ::protobuf::rt::value_size(2, self.value2, ::protobuf::wire_format::WireTypeVarint);
-        }
-        if !self.value3.is_empty() {
-            my_size += ::protobuf::rt::string_size(3, &self.value3);
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
-        self.cached_size.set(my_size);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::ProtobufResult<()> {
-        if !self.value1.is_empty() {
-            os.write_bytes(1, &self.value1)?;
-        }
-        if self.value2 != 0 {
-            os.write_int32(2, self.value2)?;
-        }
-        if !self.value3.is_empty() {
-            os.write_string(3, &self.value3)?;
-        }
-        os.write_unknown_fields(self.get_unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn get_cached_size(&self) -> u32 {
-        self.cached_size.get()
-    }
-
-    fn get_unknown_fields(&self) -> &::protobuf::UnknownFields {
-        &self.unknown_fields
-    }
-
-    fn mut_unknown_fields(&mut self) -> &mut ::protobuf::UnknownFields {
-        &mut self.unknown_fields
-    }
-
-    fn as_any(&self) -> &dyn (::std::any::Any) {
-        self as &dyn (::std::any::Any)
-    }
-    fn as_any_mut(&mut self) -> &mut dyn (::std::any::Any) {
-        self as &mut dyn (::std::any::Any)
-    }
-    fn into_any(self: ::std::boxed::Box<Self>) -> ::std::boxed::Box<dyn (::std::any::Any)> {
-        self
-    }
-
-    fn descriptor(&self) -> &'static ::protobuf::reflect::MessageDescriptor {
-        Self::descriptor_static()
-    }
-
-    fn new() -> BasicReplyMessage {
-        BasicReplyMessage::new()
-    }
-
-    fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::LazyV2<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::LazyV2::INIT;
-        descriptor.get(|| {
-            let mut fields = ::std::vec::Vec::new();
-            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBytes>(
-                "value1",
-                |m: &BasicReplyMessage| { &m.value1 },
-                |m: &mut BasicReplyMessage| { &mut m.value1 },
-            ));
-            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeInt32>(
-                "value2",
-                |m: &BasicReplyMessage| { &m.value2 },
-                |m: &mut BasicReplyMessage| { &mut m.value2 },
-            ));
-            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeString>(
-                "value3",
-                |m: &BasicReplyMessage| { &m.value3 },
-                |m: &mut BasicReplyMessage| { &mut m.value3 },
-            ));
-            ::protobuf::reflect::MessageDescriptor::new_pb_name::<BasicReplyMessage>(
-                "BasicReplyMessage",
-                fields,
-                file_descriptor_proto()
-            )
-        })
-    }
-
-    fn default_instance() -> &'static BasicReplyMessage {
-        static instance: ::protobuf::rt::LazyV2<BasicReplyMessage> = ::protobuf::rt::LazyV2::INIT;
-        instance.get(BasicReplyMessage::new)
-    }
-}
-
-impl ::protobuf::Clear for BasicReplyMessage {
-    fn clear(&mut self) {
-        self.value1.clear();
-        self.value2 = 0;
-        self.value3.clear();
-        self.unknown_fields.clear();
-    }
-}
-
-impl ::std::fmt::Debug for BasicReplyMessage {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for BasicReplyMessage {
-    fn as_ref(&self) -> ::protobuf::reflect::ReflectValueRef {
-        ::protobuf::reflect::ReflectValueRef::Message(self)
-    }
-}
-
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x0bbasic.proto\"^\n\x0cBasicMessage\x12\x18\n\x06value1\x18\x01\x20\
-    \x01(\tR\x06value1B\0\x12\x18\n\x06value2\x18\x02\x20\x01(\x05R\x06value\
-    2B\0\x12\x18\n\x06value3\x18\x03\x20\x01(\x0cR\x06value3B\0:\0\"c\n\x11B\
-    asicReplyMessage\x12\x18\n\x06value1\x18\x01\x20\x01(\x0cR\x06value1B\0\
-    \x12\x18\n\x06value2\x18\x02\x20\x01(\x05R\x06value2B\0\x12\x18\n\x06val\
-    ue3\x18\x03\x20\x01(\tR\x06value3B\0:\0B\0b\x06proto3\
+    \n\x0bbasic.proto\"\x80\x01\n\x0cBasicMessage\x12\"\n\x0cneed_to_rely\
+    \x18\x01\x20\x01(\x08R\nneedToRelyB\0\x12\x1a\n\x07caption\x18\x02\x20\
+    \x01(\tR\x07captionB\0\x12\x12\n\x03seq\x18\x03\x20\x01(\x05R\x03seqB\0\
+    \x12\x1a\n\x07payload\x18\x04\x20\x01(\x0cR\x07payloadB\0:\0B\0b\x06prot\
+    o3\
 ";
 
 static file_descriptor_proto_lazy: ::protobuf::rt::LazyV2<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::rt::LazyV2::INIT;

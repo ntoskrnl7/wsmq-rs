@@ -36,13 +36,6 @@ macro_rules! define_method {
     };
 }
 
-#[macro_export]
-macro_rules! run_server {
-    ($addr:expr, $config:expr) => {
-        wsmq_rs::server::run_with_config($addr, $config)
-    };
-}
-
 impl<OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static>
     Config<OnMessage>
 {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use std::{
     net::SocketAddr,
     str::FromStr,
@@ -13,85 +13,338 @@ mod protos {
     pub mod basic;
 }
 
-fn test_client() {
-    tokio::spawn(async {
-        // connect to server
-        match wsmq_rs::client::connect_with_config(
-            &Url::parse("ws://127.0.0.1:9999").unwrap(),
-            Some(client::Config {
-                bandwidth: 1024 * 1024 * 16,
-            }),
-        )
-        .await
-        {
-            Ok(client) => {
-                // generate message
-                let mut msg = protos::basic::BasicMessage::new();
-                msg.set_value1("client ping".to_string());
-                msg.set_value2(0);
-
-                // send only
-                println!("[client] send_message(client ping) only : 0");
-                client.send_message(&msg).unwrap();
-
-                // send and reply
-                println!("[client] send_message(client ping) and reply : 1");
-                msg.set_value2(1);
-                match client.send_message(&msg) {
-                    Ok(res) => {
-                        println!("[client] wait for reply message(server pong)");
-                        match res.await {
-                            Ok(res) => match res.to_message::<protos::basic::BasicMessage>() {
-                                Ok(mut message) => {
-                                    assert_eq!(message.get_value1(), "server pong");
-                                    assert_eq!(message.value2, 2000);
-                                    message.set_value1("client pong".to_string());
-                                    message.set_value2(2);
-                                    println!("[client] send_message(client pong) only : 2");
-                                    match res.send_message(&message).await {
-                                        Ok(res) => match res.await {
-                                            Ok(res) => {
-                                                if let Ok(message) =
-                                                    res.to_message::<protos::basic::BasicMessage>()
-                                                {
-                                                    message.get_value1();
-                                                }
-                                            }
-                                            Err(err) => println!(
-                                                "[client] Failed to send_message(client pong) : {}",
-                                                err.cause()
-                                            ),
-                                        },
-                                        Err(err) => println!(
-                                            "[client] Failed to Response(client pong) : {}",
-                                            err.cause()
-                                        ),
-                                    }
-                                }
-                                Err(err) => {
-                                    println!("[client] Failed to to_message : {}", err.cause())
-                                }
-                            },
-                            Err(err) => println!("[client] Failed to Response : {}", err.cause()),
+macro_rules! define_test_future {
+    ($test_code:expr) => {{
+        let (svc, inst) = service_rs::service::Service::new();
+        let svc = Arc::new(Mutex::new(svc));
+        let test_server = async move { $test_code(svc.clone()).await };
+        tokio::runtime::Handle::current().spawn_blocking(move || {
+            match inst.do_events(tokio::spawn(test_server)) {
+                Ok(event) => match event {
+                    service_rs::service::Event::ServiceStatus(status) => match status {
+                        service_rs::service::ServiceStatus::Stopped() => {
+                            println!("Service stopped");
+                            return;
                         }
-                    }
-                    Err(err) => println!(
-                        "[client] Failed to send_message(client ping) : {}",
-                        err.cause()
-                    ),
+                        service_rs::service::ServiceStatus::Paused(_) => {}
+                        service_rs::service::ServiceStatus::Running() => {}
+                    },
+                    service_rs::service::Event::Future(result) => match result {
+                        Ok(result) => {
+                            println!("Result : {:?}", result);
+                        }
+                        Err(err) => {
+                            println!("Elapsed : {}", err);
+                        }
+                    },
+                },
+                Err(err) => {
+                    println!("Failed to do_events : {}", err);
                 }
             }
-            Err(err) => println!(
-                "[client] Failed to connect_with_config(client) : {}",
-                err.cause()
-            ),
-        }
-    });
+        })
+    }};
 }
 
 #[tokio::test]
-async fn test_server() {
-    tokio::spawn(async {
+async fn basic_test() {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+        async fn test_client() {
+            let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:9999").unwrap())
+                .await
+                .expect("[client] Failed to client::connect");
+            let mut message = protos::basic::BasicMessage::new();
+            message.set_caption("client ping".to_string());
+            message.set_seq(1);
+            message.set_need_to_rely(true);
+            println!("[client] send_message({:?})", message);
+            let res = client
+                .send_message(&message)
+                .unwrap()
+                .await
+                .expect("Failed to send_message");
+            let message = res
+                .to_message::<protos::basic::BasicMessage>()
+                .expect("[client] Failed to to_message");
+            println!("[client] Message received ({:?})", message);
+            assert_eq!(message.get_caption(), "server pong");
+            assert_eq!(message.get_seq(), 1);
+            println!("[client] Done");
+        }
+        wsmq_rs::server::run(
+            &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
+            server::Config::new(1024 * 1024 * 16, move |addr, res| {
+                let mut message = res
+                    .to_message::<protos::basic::BasicMessage>()
+                    .expect("[server] Failed to to_message");
+                println!("[server] message received({:?}) : {} ", message, addr);
+                assert_eq!(message.get_caption(), "client ping");
+                assert_eq!(message.get_seq(), 1);
+                message.set_caption("server pong".to_string());
+                block_on(res.send_message(&message))
+                    .expect("[server] Failed to reply send_message");
+                println!("[server] send_message({:?}) : {} ", message, addr);
+                println!("[server] Done");
+            })
+            .on_started(Box::new(move || {
+                let svc = svc.clone();
+                tokio::spawn(async move {
+                    test_client().await;
+                    svc.lock().unwrap().stop().unwrap();
+                });
+            })),
+        )
+        .await
+        .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(10), f).await {
+        Ok(_) => {}
+        Err(err) => {
+            panic!("timeouted : {}", err)
+        }
+    };
+}
+
+#[tokio::test]
+async fn basic_test_err() {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+        async fn test_client() {
+            // connect to server
+            match wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:9999").unwrap()).await {
+                Ok(client) => {
+                    // generate message
+                    let mut msg = protos::basic::BasicMessage::new();
+                    msg.set_caption("client ping".to_string());
+                    // send
+                    msg.set_seq(1);
+                    msg.set_need_to_rely(true);
+                    println!("[client] send_message({:?})", msg);
+                    match client.send_message(&msg) {
+                        Ok(res) => {
+                            println!("[client] wait for reply message({:?})", msg);
+                            match res.await {
+                                Ok(res) => match res.to_message::<protos::basic::BasicMessage>() {
+                                    Ok(message) => {
+                                        println!("[client] message received ({:?})", message);
+                                    }
+                                    Err(_) => {}
+                                },
+                                Err(_) => {}
+                            }
+                        }
+                        Err(err) => println!(
+                            "[client] Failed to send_message({:?}) : {}",
+                            msg,
+                            err.cause()
+                        ),
+                    }
+                }
+                Err(err) => println!("[client] Failed to connect : {}", err.cause()),
+            }
+        }
+
+        if let Err(err) = wsmq_rs::server::run(
+            &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
+            server::Config::new(1024 * 1024 * 16, move |addr, res| match res
+                .to_message::<protos::basic::BasicMessage>(
+            ) {
+                Ok(mut message) => {
+                    println!("[server] On message : {}, {:?}", addr, message);
+                    message.set_caption("server pong".to_string());
+                    match block_on(res.send_message(&message)) {
+                        Ok(_) => {
+                            println!("[server] Done");
+                        }
+                        Err(err) => println!(
+                            "[server] Failed to reply send_message({:?}) : {}",
+                            message,
+                            err.cause()
+                        ),
+                    }
+                }
+                Err(err) => println!("[server] Failed to to_message : {}", err.cause()),
+            })
+            .on_started(Box::new(move || {
+                println!("[server] Started");
+                let svc = svc.clone();
+                tokio::spawn(async move {
+                    test_client().await;
+                    svc.lock().unwrap().stop().unwrap();
+                });
+            }))
+            .on_connect(Box::new(move |addr| {
+                println!("[server] Connected : {}", addr);
+            }))
+            .on_disconnect(Box::new(move |addr| {
+                println!("[server] Disconnected : {}", addr);
+            }))
+            .on_error(Box::new(move |err| {
+                println!("[server] Error : {}", err);
+            })),
+        )
+        .await
+        {
+            println!("[server] Failed to run : {}", err.cause());
+        }
+    });
+
+    match tokio::time::timeout(Duration::from_secs(10), f).await {
+        Ok(_) => {}
+        Err(err) => {
+            panic!("timeouted : {}", err)
+        }
+    };
+}
+
+#[tokio::test]
+async fn complex_test() {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+        async fn test_client() {
+            // connect to server
+            match wsmq_rs::client::connect_with_config(
+                &Url::parse("ws://127.0.0.1:9999").unwrap(),
+                Some(client::Config {
+                    bandwidth: 1024 * 1024 * 16,
+                }),
+            )
+            .await
+            {
+                Ok(client) => {
+                    // generate message
+                    let mut msg = protos::basic::BasicMessage::new();
+                    msg.set_caption("client ping".to_string());
+                    // send only
+                    msg.set_seq(0);
+                    msg.set_need_to_rely(false);
+                    println!("[client] send_message({:?})", msg);
+                    client.send_message(&msg).unwrap();
+                    // send and reply
+                    msg.set_seq(1);
+                    msg.set_need_to_rely(true);
+                    println!("[client] send_message({:?})", msg);
+                    match client.send_message(&msg) {
+                        Ok(res) => {
+                            println!("[client] Wait for reply message({:?})", msg);
+                            match res.await {
+                                Ok(res) => {
+                                    match res.to_message::<protos::basic::BasicMessage>() {
+                                        Ok(mut message) => {
+                                            println!("[client] Message received ({:?})", message);
+                                            assert_eq!(message.get_caption(), "server pong 1");
+                                            assert_eq!(message.seq, 1000);
+                                            message.set_caption("client ping 2".to_string());
+                                            message.set_seq(2);
+                                            message.set_need_to_rely(true);
+                                            println!("[client] Reply send_message({:?})", message);
+                                            match res.send_message(&message).await {
+                                                Ok(res) => {
+                                                    match res.await {
+                                                        Ok(res) => {
+                                                            if let Ok(mut message) = res.to_message::<protos::basic::BasicMessage>() {
+                                                        println!("[client] Message received ({:?})", message);
+                                                        assert_eq!(message.get_caption(), "server pong 2");
+                                                        assert_eq!(message.seq, 2000);
+                                                        message.set_caption("client ping 3".to_string());
+                                                        message.set_seq(3);
+                                                        message.set_need_to_rely(true);
+                                                        println!("[client] Reply send_message({:?})", message);
+                                                        match res.send_message(&message).await {
+                                                            Ok(res) => {
+                                                                match res.await {
+                                                                    Ok(res) => {
+                                                                        match res.to_message::<protos::basic::BasicMessage>() {
+                                                                            Ok(mut message) => {
+                                                                                println!("[client] Message received ({:?})", message);
+                                                                                assert_eq!(message.get_caption(), "server pong 3");
+                                                                                assert_eq!(message.seq, 3000);
+                                                                                message.set_caption("client ping 4".to_string());
+                                                                                message.set_seq(4);
+                                                                                message.set_need_to_rely(true);
+                                                                                println!("[client] Reply send_message({:?})", message);
+                                                                                match res.send_message(&message).await {
+                                                                                    Ok(res) => {
+                                                                                        match res.await {
+                                                                                            Ok(res) => {
+                                                                                                match res.to_message::<protos::basic::BasicMessage>() {
+                                                                                                    Ok(message) => {
+                                                                                                        println!("[client] On reply message({:?})", message);
+                                                                                                        println!("[client] Done");
+                                                                                                        //return; // or client.close();
+                                                                                                    }
+                                                                                                    Err(err) => {
+                                                                                                        println!("[client] Failed to to_message : {}", err.cause())
+                                                                                                    }
+                                                                                                }
+                                                                                            }
+                                                                                            Err(err) => println!(
+                                                                                                "[client] Failed to Response : {}",
+                                                                                                err.cause()
+                                                                                            ),
+                                                                                        }
+                                                                                    }
+                                                                                    Err(err) => println!(
+                                                                                        "[client] Failed to reply send_message({:?}) : {}",
+                                                                                        message,
+                                                                                        err.cause()
+                                                                                    ),
+                                                                                }
+                                                                            }
+                                                                            Err(err) => {
+                                                                                println!("[client] Failed to to_message : {}", err.cause())
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Err(err) => println!(
+                                                                        "[client] Failed to Response : {}",
+                                                                        err.cause()
+                                                                    ),
+                                                                }
+                                                            }
+                                                            Err(err) => println!(
+                                                                "[client] Failed to reply send_message({:?}) : {}",
+                                                                message,
+                                                                err.cause()
+                                                            ),
+                                                        }
+                                                    }
+                                                        }
+                                                        Err(err) => println!(
+                                                            "[client] Failed to Response : {}",
+                                                            err.cause()
+                                                        ),
+                                                    }
+                                                }
+                                                Err(err) => println!(
+                                                    "[client] Failed to reply send_message({:?}) : {}",
+                                                    message,
+                                                    err.cause()
+                                                ),
+                                            }
+                                        }
+                                        Err(err) => {
+                                            println!(
+                                                "[client] Failed to to_message : {}",
+                                                err.cause()
+                                            )
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    println!("[client] Failed to Response : {}", err.cause())
+                                }
+                            }
+                        }
+                        Err(err) => println!(
+                            "[client] Failed to send_message({:?}) : {}",
+                            msg,
+                            err.cause()
+                        ),
+                    }
+                }
+                Err(err) => println!("[client] Failed to connect_with_config : {}", err.cause()),
+            }
+        }
+
         let client_map = Arc::new(Mutex::new(HashMap::new()));
         let client_map_on_started = client_map.clone();
         let client_map_on_message = client_map.clone();
@@ -99,39 +352,46 @@ async fn test_server() {
         if let Err(err) = wsmq_rs::server::run(
             &SocketAddr::from_str("0.0.0.0:9999").unwrap(),
             server::Config::new(1024 * 1024 * 16, move |addr, res| {
-                println!("[server] On message : {}", addr);
-                let mut message = res.to_message::<protos::basic::BasicMessage>().unwrap();
                 let client_map = client_map_on_message.clone();
-                if let Ok(mut map) = client_map.lock() {
-                    if let Some(ctx) = map.get_mut(&addr) {
-                        assert_eq!(message.value2, *ctx);
-                        *ctx += 1;
-                        println!("[server] send_message(server pong) : {}", ctx);
-                        message.set_value1("server pong".to_string());
-                        message.set_value2(*ctx * 1000);
-                        match block_on(res.send_message(&message)) {
-                            Ok(res) => match block_on(res) {
-                                Ok(_res) => {
-                                    //res.send_message(&message).await;
+                match res.to_message::<protos::basic::BasicMessage>() {
+                    Ok(mut message) => {
+                        println!("[server] On message : {}, {:?}", addr, message);
+                        if let Ok(mut map) = client_map.lock() {
+                            if let Some(ctx) = map.get_mut(&addr) {
+                                assert_eq!(message.seq, *ctx);
+                                if message.need_to_rely {
+                                    let seq = message.seq;
+                                    message.set_caption(format!("server pong {}", *ctx));
+                                    message.set_seq(*ctx * 1000);
+                                    println!("[server] send_message({:?})", message);
+                                    match block_on(res.send_message(&message)) {
+                                        Ok(_) => {
+                                            if seq == 4 {
+                                                println!("[server] Done");
+                                            }
+                                        }
+                                        Err(err) => println!(
+                                            "[server] Failed to reply send_message({:?}) : {}",
+                                            message,
+                                            err.cause()
+                                        ),
+                                    }
                                 }
-                                Err(err) => println!(
-                                    "[server] Failed to Response(server pong) : {}",
-                                    err.cause()
-                                ),
-                            },
-                            Err(err) => println!(
-                                "[server] Failed to send_message(server pong) : {}",
-                                err.cause()
-                            ),
+                                *ctx += 1;
+                            }
                         }
                     }
+                    Err(err) => println!("[server] Failed to to_message : {}", err.cause()),
                 }
-                ()
             })
             .on_started(Box::new(move || {
                 if let Ok(_map) = client_map_on_started.lock() {}
                 println!("[server] Started");
-                test_client();
+                let svc = svc.clone();
+                tokio::spawn(async move {
+                    test_client().await;
+                    svc.lock().unwrap().stop().unwrap();
+                });
             }))
             .on_connect(Box::new(move |addr| {
                 let client_map = client_map_on_connected.clone();
@@ -142,17 +402,18 @@ async fn test_server() {
                 println!("[server] Disconnected : {}", addr);
             }))
             .on_error(Box::new(move |err| {
-                println!("[server] Failed to run_with_config(client) : {}", err);
+                println!("[server] Error : {}", err);
             })),
         )
         .await
         {
-            println!(
-                "[server] Failed to run_with_config(client) : {}",
-                err.cause()
-            );
+            println!("[server] Failed to run_with_config : {}", err.cause());
         }
-    })
-    .await
-    .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(20), f).await {
+        Ok(_) => {}
+        Err(err) => {
+            panic!("timeouted : {}", err)
+        }
+    };
 }

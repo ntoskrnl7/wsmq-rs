@@ -52,6 +52,11 @@ impl<'a> Response<'a> {
         &self,
         message: &dyn protobuf::Message,
     ) -> Result<ResponseFuture<'a>> {
+        if let Ok(mut map) = self.shared.responses.lock() {
+            if let None = map.get(&self.uuid) {
+                map.insert(self.uuid, crate::response::Status::None);
+            }
+        }
         self.shared.send_message(self.uuid, message)
     }
 }
@@ -100,9 +105,9 @@ impl<'a> Future for ResponseFuture<'a> {
                     }
                 }
             }
-            Poll::Ready(Err(Error::InvalidParameters()))
+            Poll::Ready(Err(Error::NotFound()))
         } else {
-            Poll::Ready(Err(Error::InvalidParameters()))
+            Poll::Ready(Err(Error::MutexError()))
         }
     }
 }
@@ -130,7 +135,6 @@ impl ResponseShared {
     pub fn new_response<'a>(&'a self, uuid: Uuid, data: Vec<u8>) -> Response<'a> {
         Response::new(uuid, data, self)
     }
-    
     pub fn send(&self, uuid: Uuid, message: Vec<u8>) -> Result<ResponseFuture> {
         let mut oneshot = protos::message::Oneshot::new();
         oneshot.set_field_type(Type::ONESHOT);

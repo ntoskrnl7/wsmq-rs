@@ -8,6 +8,12 @@ pub enum Error {
     #[error("Invalid parameters")]
     InvalidParameters(),
 
+    #[error("Not found")]
+    NotFound(),
+
+    #[error("Mutex error")]
+    MutexError(),
+
     #[error("Internal error")]
     InternalError(Box<dyn std::error::Error + Send + Sync>),
 }
