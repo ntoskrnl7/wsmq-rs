@@ -17,11 +17,8 @@ use uuid::Uuid;
 use crate::response::{Response, ResponseShared};
 use crate::{message::MessageContext, message_dispatch};
 
-pub struct Config<
-    OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static,
-> {
+pub struct Config {
     pub bandwidth: usize,
-    pub on_message: OnMessage,
     pub on_started: Option<OnStarted>,
     pub on_connect: Option<OnConnect>,
     pub on_disconnect: Option<OnDisconnect>,
@@ -29,13 +26,10 @@ pub struct Config<
     pub on_error: Option<OnError>,
 }
 
-impl<OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static>
-    Config<OnMessage>
-{
-    pub fn new(bandwidth: usize, on_message: OnMessage) -> Self {
+impl Config {
+    pub fn new(bandwidth: usize) -> Self {
         Config {
             bandwidth,
-            on_message,
             on_started: None,
             on_connect: None,
             on_disconnect: None,
@@ -54,17 +48,42 @@ pub async fn run<
     OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static,
 >(
     addr: &SocketAddr,
-    config: Config<OnMessage>,
+    on_message: OnMessage,
+) -> crate::Result<()> {
+    run_with_config2(addr, on_message, None).await
+}
+
+pub async fn run_with_config<
+    OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static,
+>(
+    addr: &SocketAddr,
+    on_message: OnMessage,
+    config: Config,
+) -> crate::Result<()> {
+    run_with_config2(addr, on_message, Some(config)).await
+}
+
+pub async fn run_with_config2<
+    OnMessage: Fn(SocketAddr, crate::response::Response) -> () + Send + Sync + 'static,
+>(
+    addr: &SocketAddr,
+    on_message: OnMessage,
+    config: Option<Config>,
 ) -> crate::Result<()> {
     match tokio::net::TcpListener::bind(addr).await {
         Ok(socket) => {
             let config = Arc::new(config);
-            if let Some(ref on_started) = config.on_started {
-                on_started();
+            let on_message = Arc::new(on_message);
+            if let Some(config) = config.as_ref() {
+                if let Some(ref on_started) = config.on_started {
+                    on_started();
+                }
             }
             let config2 = config.clone();
+            let on_message2 = on_message.clone();
             while let Ok((stream, addr)) = socket.accept().await {
                 let config = config2.clone();
+                let on_message = on_message2.clone();
                 tokio::spawn(async move {
                     let config2 = config.clone();
                     match tokio_tungstenite::accept_async(stream).await {
@@ -72,33 +91,41 @@ pub async fn run<
                             let config = config2.clone();
                             let (tx, rx) = unbounded();
                             let shared = ResponseShared {
-                                bandwidth: config.bandwidth,
+                                bandwidth: if let Some(config) = config.as_ref() {
+                                    config.bandwidth
+                                } else {
+                                    1024 * 1024 * 16
+                                },
                                 responses: Arc::new(Mutex::new(HashMap::new())),
                                 tx,
                             };
                             let message_contexts = Arc::new(Mutex::new(HashMap::new()));
-                            if let Some(ref on_connect) = config.on_connect {
-                                on_connect(addr);
+                            if let Some(config) = config.as_ref() {
+                                if let Some(ref on_connect) = config.on_connect {
+                                    on_connect(addr);
+                                }
                             }
+
                             let (write, read) = stream.split();
                             let read = read.try_for_each(|message| {
                                 message_dispatch!(
                                     message_contexts,
                                     &message.into_data(),
                                     |uuid, message| {
-                                        (config.on_message)(
-                                            addr,
-                                            Response::new(uuid, message, &shared),
-                                        );
+                                        (on_message)(addr, Response::new(uuid, message, &shared));
                                     },
                                     |context| {
-                                        if let Some(ref on_progress) = config.on_progress {
-                                            on_progress(context);
+                                        if let Some(config) = config.as_ref() {
+                                            if let Some(ref on_progress) = config.on_progress {
+                                                on_progress(context);
+                                            }
                                         }
                                     },
                                     |err| {
-                                        if let Some(ref on_error) = config.on_error {
-                                            on_error(Box::new(err));
+                                        if let Some(config) = config.as_ref() {
+                                            if let Some(ref on_error) = config.on_error {
+                                                on_error(Box::new(err));
+                                            }
                                         }
                                     }
                                 );
@@ -106,13 +133,17 @@ pub async fn run<
                             });
                             let write = rx.map(Ok).forward(write);
                             future::select(read, write).await;
-                            if let Some(ref on_disconnect) = config.on_disconnect {
-                                on_disconnect(addr);
+                            if let Some(config) = config.as_ref() {
+                                if let Some(ref on_disconnect) = config.on_disconnect {
+                                    on_disconnect(addr);
+                                }
                             }
                         }
                         Err(err) => {
-                            if let Some(ref on_error) = config.on_error {
-                                on_error(Box::new(err));
+                            if let Some(config) = config.as_ref() {
+                                if let Some(ref on_error) = config.on_error {
+                                    on_error(Box::new(err));
+                                }
                             }
                         }
                     }

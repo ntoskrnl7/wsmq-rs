@@ -63,10 +63,14 @@ impl Client {
 }
 
 pub async fn connect(url: &Url) -> Result<Client> {
-    connect_with_config(url, None).await
+    connect_with_config2(url, None).await
 }
 
-pub async fn connect_with_config(url: &Url, config: Option<Config>) -> Result<Client> {
+pub async fn connect_with_config(url: &Url, config: Config) -> Result<Client> {
+    connect_with_config2(url, Some(config)).await
+}
+
+pub async fn connect_with_config2(url: &Url, config: Option<Config>) -> Result<Client> {
     match connect_async(url).await {
         Ok((stream, _)) => {
             let (write, read) = stream.split();
