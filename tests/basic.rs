@@ -17,7 +17,8 @@ macro_rules! define_test_future {
     ($test_code:expr) => {{
         let (svc, inst) = service_rs::service::Service::new();
         let svc = Arc::new(Mutex::new(svc));
-        let test_server = async move { $test_code(svc.clone()).await };
+        let inst1 = inst.clone();
+        let test_server = async move { $test_code(svc.clone(), inst1.clone()).await };
         tokio::runtime::Handle::current().spawn_blocking(move || {
             match inst.do_events(tokio::spawn(test_server)) {
                 Ok(event) => match event {
@@ -48,7 +49,7 @@ macro_rules! define_test_future {
 
 #[tokio::test]
 async fn basic_test() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65000").unwrap())
                 .await
@@ -105,7 +106,7 @@ async fn basic_test() {
 
 #[tokio::test]
 async fn basic_test_err() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             // connect to server
             match wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65001").unwrap()).await {
@@ -194,14 +195,16 @@ async fn basic_test_err() {
 
 #[tokio::test]
 async fn complex_test() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             // connect to server
             match wsmq_rs::client::connect_with_config(
                 &Url::parse("ws://127.0.0.1:65002").unwrap(),
-                Some(client::Config {
-                    bandwidth: 1024 * 1024 * 16,
-                }),
+                Some(
+                    client::Config::new(1024 * 1024 * 4).on_error(Box::new(|err| {
+                        println!("[client] on_error : {}", err);
+                    })),
+                ),
             )
             .await
             {
@@ -411,24 +414,126 @@ async fn complex_test() {
 }
 
 #[tokio::test]
-async fn large_message_test() {
+async fn send_large_message_test() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>| async {
-        async fn test_client() {
+    let f = define_test_future!(
+        |svc: Arc<Mutex<service_rs::service::Service>>,
+         inst: Arc<service_rs::service::ServiceInstance>| async move {
+            async fn test_client(
+                test_data: Vec<u8>,
+                inst: Arc<service_rs::service::ServiceInstance>,
+            ) {
+                let client = wsmq_rs::client::connect_with_config(
+                    &Url::parse("ws://127.0.0.1:65000").unwrap(),
+                    Some(
+                        client::Config::new(1024 * 1024 * 4).on_error(Box::new(|err| {
+                            println!("[client] on_error : {}", err);
+                        })),
+                    ),
+                )
+                .await
+                .expect("[client] Failed to client::connect");
+                let mut message = protos::basic::BasicMessage::new();
+                message.set_caption("client ping".to_string());
+                message.set_seq(1);
+                message.set_payload(test_data);
+                message.set_need_to_rely(false);
+                println!(
+                    "[client] send_message({}, {})",
+                    message.caption,
+                    message.payload.len()
+                );
+                client.send_message(&message).unwrap();
+                loop {
+                    if inst.is_running() {
+                        tokio::task::yield_now().await;
+                    } else {
+                        break;
+                    }
+                }
+                println!("[client] Done");
+            }
+
+            println!("[common] Generate test_data");
+            let test_data = Arc::new(
+                (0..1024 * 1024 * 128)
+                    .map(|f| (f % 255) as u8)
+                    .collect::<Vec<u8>>(),
+            );
+            println!("[common] Generate test_data done.");
+
+            let test_data2 = test_data.clone();
+            let test_data3 = test_data.clone();
+
+            let inst2 = inst.clone();
+            wsmq_rs::server::run(
+                &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
+                server::Config::new(1024 * 1024 * 4, move |addr, res| {
+                    let message = res
+                        .to_message::<protos::basic::BasicMessage>()
+                        .expect("[server] Failed to to_message");
+                    println!(
+                        "[server] message received({}, {}) : {} ",
+                        message.caption,
+                        message.payload.len(),
+                        addr
+                    );
+                    assert_eq!(message.get_caption(), "client ping");
+                    assert_eq!(message.get_seq(), 1);
+                    assert_eq!(test_data2.to_vec(), message.payload);
+                    println!("[server] Done");
+                    svc.lock().unwrap().stop().unwrap();
+                })
+                .on_started(Box::new(move || {
+                    let test_data = test_data3.clone();
+                    let inst3 = inst2.clone();
+                    rt.spawn(async move {
+                        test_client(test_data.to_vec(), inst3.clone()).await;
+                    });
+                }))
+                .on_progress(Box::new(|ctx| {
+                    println!(
+                        "[server] {:?} : {}/{}",
+                        ctx.method, ctx.current, ctx.total_length
+                    );
+                })),
+            )
+            .await
+            .unwrap();
+        }
+    );
+    match tokio::time::timeout(Duration::from_secs(60), f).await {
+        Ok(_) => {}
+        Err(err) => panic!("timeouted : {}", err),
+    };
+}
+
+#[tokio::test]
+async fn send_large_message_ping_pong_test() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+        async fn test_client(test_data: Vec<u8>) {
             let client = wsmq_rs::client::connect_with_config(
                 &Url::parse("ws://127.0.0.1:65000").unwrap(),
-                Some(wsmq_rs::client::Config { bandwidth: 1024 }),
+                Some(
+                    client::Config::new(1024 * 1024 * 4)
+                        .on_progress(Box::new(|ctx| {
+                            println!(
+                                "[client] {:?} : {}/{}",
+                                ctx.method, ctx.current, ctx.total_length
+                            );
+                        }))
+                        .on_error(Box::new(|err| {
+                            println!("[client] on_error : {}", err);
+                        })),
+                ),
             )
             .await
             .expect("[client] Failed to client::connect");
             let mut message = protos::basic::BasicMessage::new();
             message.set_caption("client ping".to_string());
             message.set_seq(1);
-            message.set_payload(
-                (0..1024 * 1024 * 16)
-                    .map(|f| (f % 255) as u8)
-                    .collect::<Vec<u8>>(),
-            );
+            message.set_payload(test_data);
             message.set_need_to_rely(true);
             println!(
                 "[client] send_message({}, {})",
@@ -440,14 +545,27 @@ async fn large_message_test() {
                 .unwrap()
                 .await
                 .expect("Failed to send_message");
-            let message = res
+            let message_res = res
                 .to_message::<protos::basic::BasicMessage>()
                 .expect("[client] Failed to to_message");
-            println!("[client] Message received ({:?})", message);
-            assert_eq!(message.get_caption(), "server pong");
-            assert_eq!(message.get_seq(), 1);
+            println!(
+                "[client] Message received ({}, {})",
+                message_res.caption,
+                message_res.payload.len()
+            );
+            assert_eq!(message_res.get_caption(), "server pong");
+            assert_eq!(message_res.get_seq(), 1);
+            assert_eq!(message.payload, message_res.payload);
             println!("[client] Done");
         }
+
+        let test_data = Arc::new(
+            (0..1024 * 1024 * 128)
+                .map(|f| (f % 255) as u8)
+                .collect::<Vec<u8>>(),
+        );
+        let test_data2 = test_data.clone();
+        let test_data3 = test_data.clone();
         wsmq_rs::server::run(
             &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
             server::Config::new(1024 * 1024 * 16, move |addr, res| {
@@ -462,8 +580,8 @@ async fn large_message_test() {
                 );
                 assert_eq!(message.get_caption(), "client ping");
                 assert_eq!(message.get_seq(), 1);
+                assert_eq!(test_data2.to_vec(), message.payload);
                 message.set_caption("server pong".to_string());
-                // message.set_payload(vec![0]); // * server (begin,process,end) -> client
                 block_on(res.send_message(&message))
                     .expect("[server] Failed to reply send_message");
                 println!(
@@ -476,10 +594,17 @@ async fn large_message_test() {
             })
             .on_started(Box::new(move || {
                 let svc = svc.clone();
+                let test_data = test_data3.clone();
                 rt.spawn(async move {
-                    test_client().await;
+                    test_client(test_data.to_vec()).await;
                     svc.lock().unwrap().stop().unwrap();
                 });
+            }))
+            .on_progress(Box::new(|ctx| {
+                println!(
+                    "[server] {:?} : {}/{}",
+                    ctx.method, ctx.current, ctx.total_length
+                );
             })),
         )
         .await
