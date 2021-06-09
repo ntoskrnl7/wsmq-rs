@@ -10,7 +10,7 @@ use url::Url;
 use wsmq_rs::{client, server};
 
 mod protos {
-    pub mod basic;
+    pub mod test;
 }
 
 macro_rules! define_test_future {
@@ -54,7 +54,7 @@ async fn basic_test() {
             let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65000").unwrap())
                 .await
                 .expect("[client] Failed to client::connect");
-            let mut message = protos::basic::BasicMessage::new();
+            let mut message = protos::test::TestMessage::new();
             message.set_caption("client ping".to_string());
             message.set_seq(1);
             message.set_need_to_rely(true);
@@ -65,7 +65,7 @@ async fn basic_test() {
                 .await
                 .expect("Failed to send_message");
             let message = res
-                .to_message::<protos::basic::BasicMessage>()
+                .to_message::<protos::test::TestMessage>()
                 .expect("[client] Failed to to_message");
             println!("[client] Message received ({:?})", message);
             assert_eq!(message.get_caption(), "server pong");
@@ -76,7 +76,7 @@ async fn basic_test() {
             &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
             move |addr, res| {
                 let mut message = res
-                    .to_message::<protos::basic::BasicMessage>()
+                    .to_message::<protos::test::TestMessage>()
                     .expect("[server] Failed to to_message");
                 println!("[server] message received({:?}) : {} ", message, addr);
                 assert_eq!(message.get_caption(), "client ping");
@@ -112,7 +112,7 @@ async fn basic_test_err() {
             match wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65001").unwrap()).await {
                 Ok(client) => {
                     // generate message
-                    let mut msg = protos::basic::BasicMessage::new();
+                    let mut msg = protos::test::TestMessage::new();
                     msg.set_caption("client ping".to_string());
                     // send
                     msg.set_seq(1);
@@ -122,7 +122,7 @@ async fn basic_test_err() {
                         Ok(res) => {
                             println!("[client] wait for reply message({:?})", msg);
                             match res.await {
-                                Ok(res) => match res.to_message::<protos::basic::BasicMessage>() {
+                                Ok(res) => match res.to_message::<protos::test::TestMessage>() {
                                     Ok(message) => {
                                         println!("[client] message received ({:?})", message);
                                     }
@@ -144,7 +144,7 @@ async fn basic_test_err() {
 
         if let Err(err) = wsmq_rs::server::run_with_config(
             &SocketAddr::from_str("0.0.0.0:65001").unwrap(),
-            move |addr, res| match res.to_message::<protos::basic::BasicMessage>() {
+            move |addr, res| match res.to_message::<protos::test::TestMessage>() {
                 Ok(mut message) => {
                     println!("[server] On message : {}, {:?}", addr, message);
                     message.set_caption("server pong".to_string());
@@ -207,7 +207,7 @@ async fn complex_test() {
             {
                 Ok(client) => {
                     // generate message
-                    let mut msg = protos::basic::BasicMessage::new();
+                    let mut msg = protos::test::TestMessage::new();
                     msg.set_caption("client ping".to_string());
                     // send only
                     msg.set_seq(0);
@@ -223,7 +223,7 @@ async fn complex_test() {
                             println!("[client] Wait for reply message({:?})", msg);
                             match res.await {
                                 Ok(res) => {
-                                    match res.to_message::<protos::basic::BasicMessage>() {
+                                    match res.to_message::<protos::test::TestMessage>() {
                                         Ok(mut message) => {
                                             println!("[client] Message received ({:?})", message);
                                             assert_eq!(message.get_caption(), "server pong 1");
@@ -236,7 +236,7 @@ async fn complex_test() {
                                                 Ok(res) => {
                                                     match res.await {
                                                         Ok(res) => {
-                                                            if let Ok(mut message) = res.to_message::<protos::basic::BasicMessage>() {
+                                                            if let Ok(mut message) = res.to_message::<protos::test::TestMessage>() {
                                                         println!("[client] Message received ({:?})", message);
                                                         assert_eq!(message.get_caption(), "server pong 2");
                                                         assert_eq!(message.seq, 2000);
@@ -248,7 +248,7 @@ async fn complex_test() {
                                                             Ok(res) => {
                                                                 match res.await {
                                                                     Ok(res) => {
-                                                                        match res.to_message::<protos::basic::BasicMessage>() {
+                                                                        match res.to_message::<protos::test::TestMessage>() {
                                                                             Ok(mut message) => {
                                                                                 println!("[client] Message received ({:?})", message);
                                                                                 assert_eq!(message.get_caption(), "server pong 3");
@@ -261,7 +261,7 @@ async fn complex_test() {
                                                                                     Ok(res) => {
                                                                                         match res.await {
                                                                                             Ok(res) => {
-                                                                                                match res.to_message::<protos::basic::BasicMessage>() {
+                                                                                                match res.to_message::<protos::test::TestMessage>() {
                                                                                                     Ok(message) => {
                                                                                                         println!("[client] On reply message({:?})", message);
                                                                                                         println!("[client] Done");
@@ -347,7 +347,7 @@ async fn complex_test() {
             &SocketAddr::from_str("0.0.0.0:65002").unwrap(),
             move |addr, res| {
                 let client_map = client_map_on_message.clone();
-                match res.to_message::<protos::basic::BasicMessage>() {
+                match res.to_message::<protos::test::TestMessage>() {
                     Ok(mut message) => {
                         println!("[server] On message : {}, {:?}", addr, message);
                         if let Ok(mut map) = client_map.lock() {
@@ -429,7 +429,7 @@ async fn send_large_message_test() {
                 )
                 .await
                 .expect("[client] Failed to client::connect");
-                let mut message = protos::basic::BasicMessage::new();
+                let mut message = protos::test::TestMessage::new();
                 message.set_caption("client ping".to_string());
                 message.set_seq(1);
                 message.set_payload(test_data);
@@ -466,7 +466,7 @@ async fn send_large_message_test() {
                 &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
                 move |addr, res| {
                     let message = res
-                        .to_message::<protos::basic::BasicMessage>()
+                        .to_message::<protos::test::TestMessage>()
                         .expect("[server] Failed to to_message");
                     println!(
                         "[server] message received({}, {}) : {} ",
@@ -525,7 +525,7 @@ async fn send_large_message_ping_pong_test() {
             )
             .await
             .expect("[client] Failed to client::connect");
-            let mut message = protos::basic::BasicMessage::new();
+            let mut message = protos::test::TestMessage::new();
             message.set_caption("client ping".to_string());
             message.set_seq(1);
             message.set_payload(test_data);
@@ -541,7 +541,7 @@ async fn send_large_message_ping_pong_test() {
                 .await
                 .expect("Failed to send_message");
             let message_res = res
-                .to_message::<protos::basic::BasicMessage>()
+                .to_message::<protos::test::TestMessage>()
                 .expect("[client] Failed to to_message");
             println!(
                 "[client] Message received ({}, {})",
@@ -565,7 +565,7 @@ async fn send_large_message_ping_pong_test() {
             &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
             move |addr, res| {
                 let mut message = res
-                    .to_message::<protos::basic::BasicMessage>()
+                    .to_message::<protos::test::TestMessage>()
                     .expect("[server] Failed to to_message");
                 println!(
                     "[server] message received({}, {}) : {} ",

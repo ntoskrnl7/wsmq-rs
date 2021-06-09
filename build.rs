@@ -7,7 +7,7 @@ fn main() {
             gen_mod_rs: Some(true),
             ..Default::default()
         })
-        .inputs(&["./tests/protos/basic.proto"])
+        .inputs(&["./tests/protos/test.proto"])
         .include("./tests/protos")
         .run()
         .expect("Codegen failed.");
@@ -18,7 +18,7 @@ fn main() {
             gen_mod_rs: Some(true),
             ..Default::default()
         })
-        .inputs(&["./protos/status.proto", "./protos/message.proto"])
+        .inputs(&["./protos/message.proto"])
         .include("./protos")
         .run()
         .expect("Codegen failed.");

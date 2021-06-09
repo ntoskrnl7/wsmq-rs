@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-message BasicMessage {
+message TestMessage {
     bool need_to_rely = 1;
     string caption = 2;
     int32 seq = 3;

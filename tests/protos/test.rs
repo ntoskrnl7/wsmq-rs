@@ -17,14 +17,14 @@
 #![allow(trivial_casts)]
 #![allow(unused_imports)]
 #![allow(unused_results)]
-//! Generated file from `basic.proto`
+//! Generated file from `test.proto`
 
 /// Generated files are compatible only with the same version
 /// of protobuf runtime.
 // const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_2_23_0;
 
 #[derive(PartialEq,Clone,Default)]
-pub struct BasicMessage {
+pub struct TestMessage {
     // message fields
     pub need_to_rely: bool,
     pub caption: ::std::string::String,
@@ -35,14 +35,14 @@ pub struct BasicMessage {
     pub cached_size: ::protobuf::CachedSize,
 }
 
-impl<'a> ::std::default::Default for &'a BasicMessage {
-    fn default() -> &'a BasicMessage {
-        <BasicMessage as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a TestMessage {
+    fn default() -> &'a TestMessage {
+        <TestMessage as ::protobuf::Message>::default_instance()
     }
 }
 
-impl BasicMessage {
-    pub fn new() -> BasicMessage {
+impl TestMessage {
+    pub fn new() -> TestMessage {
         ::std::default::Default::default()
     }
 
@@ -129,7 +129,7 @@ impl BasicMessage {
     }
 }
 
-impl ::protobuf::Message for BasicMessage {
+impl ::protobuf::Message for TestMessage {
     fn is_initialized(&self) -> bool {
         true
     }
@@ -230,8 +230,8 @@ impl ::protobuf::Message for BasicMessage {
         Self::descriptor_static()
     }
 
-    fn new() -> BasicMessage {
-        BasicMessage::new()
+    fn new() -> TestMessage {
+        TestMessage::new()
     }
 
     fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
@@ -240,39 +240,39 @@ impl ::protobuf::Message for BasicMessage {
             let mut fields = ::std::vec::Vec::new();
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBool>(
                 "need_to_rely",
-                |m: &BasicMessage| { &m.need_to_rely },
-                |m: &mut BasicMessage| { &mut m.need_to_rely },
+                |m: &TestMessage| { &m.need_to_rely },
+                |m: &mut TestMessage| { &mut m.need_to_rely },
             ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeString>(
                 "caption",
-                |m: &BasicMessage| { &m.caption },
-                |m: &mut BasicMessage| { &mut m.caption },
+                |m: &TestMessage| { &m.caption },
+                |m: &mut TestMessage| { &mut m.caption },
             ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeInt32>(
                 "seq",
-                |m: &BasicMessage| { &m.seq },
-                |m: &mut BasicMessage| { &mut m.seq },
+                |m: &TestMessage| { &m.seq },
+                |m: &mut TestMessage| { &mut m.seq },
             ));
             fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBytes>(
                 "payload",
-                |m: &BasicMessage| { &m.payload },
-                |m: &mut BasicMessage| { &mut m.payload },
+                |m: &TestMessage| { &m.payload },
+                |m: &mut TestMessage| { &mut m.payload },
             ));
-            ::protobuf::reflect::MessageDescriptor::new_pb_name::<BasicMessage>(
-                "BasicMessage",
+            ::protobuf::reflect::MessageDescriptor::new_pb_name::<TestMessage>(
+                "TestMessage",
                 fields,
                 file_descriptor_proto()
             )
         })
     }
 
-    fn default_instance() -> &'static BasicMessage {
-        static instance: ::protobuf::rt::LazyV2<BasicMessage> = ::protobuf::rt::LazyV2::INIT;
-        instance.get(BasicMessage::new)
+    fn default_instance() -> &'static TestMessage {
+        static instance: ::protobuf::rt::LazyV2<TestMessage> = ::protobuf::rt::LazyV2::INIT;
+        instance.get(TestMessage::new)
     }
 }
 
-impl ::protobuf::Clear for BasicMessage {
+impl ::protobuf::Clear for TestMessage {
     fn clear(&mut self) {
         self.need_to_rely = false;
         self.caption.clear();
@@ -282,24 +282,23 @@ impl ::protobuf::Clear for BasicMessage {
     }
 }
 
-impl ::std::fmt::Debug for BasicMessage {
+impl ::std::fmt::Debug for TestMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for BasicMessage {
+impl ::protobuf::reflect::ProtobufValue for TestMessage {
     fn as_ref(&self) -> ::protobuf::reflect::ReflectValueRef {
         ::protobuf::reflect::ReflectValueRef::Message(self)
     }
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\x0bbasic.proto\"\x80\x01\n\x0cBasicMessage\x12\"\n\x0cneed_to_rely\
-    \x18\x01\x20\x01(\x08R\nneedToRelyB\0\x12\x1a\n\x07caption\x18\x02\x20\
-    \x01(\tR\x07captionB\0\x12\x12\n\x03seq\x18\x03\x20\x01(\x05R\x03seqB\0\
-    \x12\x1a\n\x07payload\x18\x04\x20\x01(\x0cR\x07payloadB\0:\0B\0b\x06prot\
-    o3\
+    \n\ntest.proto\"\x7f\n\x0bTestMessage\x12\"\n\x0cneed_to_rely\x18\x01\
+    \x20\x01(\x08R\nneedToRelyB\0\x12\x1a\n\x07caption\x18\x02\x20\x01(\tR\
+    \x07captionB\0\x12\x12\n\x03seq\x18\x03\x20\x01(\x05R\x03seqB\0\x12\x1a\
+    \n\x07payload\x18\x04\x20\x01(\x0cR\x07payloadB\0:\0B\0b\x06proto3\
 ";
 
 static file_descriptor_proto_lazy: ::protobuf::rt::LazyV2<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::rt::LazyV2::INIT;

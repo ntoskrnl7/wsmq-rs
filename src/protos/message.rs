@@ -1158,196 +1158,6 @@ impl ::protobuf::reflect::ProtobufValue for End {
     }
 }
 
-#[derive(PartialEq,Clone,Default)]
-pub struct BeginReply {
-    // message fields
-    pub status: super::status::Status,
-    pub generated_uuid: ::std::vec::Vec<u8>,
-    // special fields
-    pub unknown_fields: ::protobuf::UnknownFields,
-    pub cached_size: ::protobuf::CachedSize,
-}
-
-impl<'a> ::std::default::Default for &'a BeginReply {
-    fn default() -> &'a BeginReply {
-        <BeginReply as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl BeginReply {
-    pub fn new() -> BeginReply {
-        ::std::default::Default::default()
-    }
-
-    // .Status status = 3;
-
-
-    pub fn get_status(&self) -> super::status::Status {
-        self.status
-    }
-    pub fn clear_status(&mut self) {
-        self.status = super::status::Status::OK;
-    }
-
-    // Param is passed by value, moved
-    pub fn set_status(&mut self, v: super::status::Status) {
-        self.status = v;
-    }
-
-    // bytes generated_uuid = 4;
-
-
-    pub fn get_generated_uuid(&self) -> &[u8] {
-        &self.generated_uuid
-    }
-    pub fn clear_generated_uuid(&mut self) {
-        self.generated_uuid.clear();
-    }
-
-    // Param is passed by value, moved
-    pub fn set_generated_uuid(&mut self, v: ::std::vec::Vec<u8>) {
-        self.generated_uuid = v;
-    }
-
-    // Mutable pointer to the field.
-    // If field is not initialized, it is initialized with default value first.
-    pub fn mut_generated_uuid(&mut self) -> &mut ::std::vec::Vec<u8> {
-        &mut self.generated_uuid
-    }
-
-    // Take field
-    pub fn take_generated_uuid(&mut self) -> ::std::vec::Vec<u8> {
-        ::std::mem::replace(&mut self.generated_uuid, ::std::vec::Vec::new())
-    }
-}
-
-impl ::protobuf::Message for BeginReply {
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::ProtobufResult<()> {
-        while !is.eof()? {
-            let (field_number, wire_type) = is.read_tag_unpack()?;
-            match field_number {
-                3 => {
-                    ::protobuf::rt::read_proto3_enum_with_unknown_fields_into(wire_type, is, &mut self.status, 3, &mut self.unknown_fields)?
-                },
-                4 => {
-                    ::protobuf::rt::read_singular_proto3_bytes_into(wire_type, is, &mut self.generated_uuid)?;
-                },
-                _ => {
-                    ::protobuf::rt::read_unknown_or_skip_group(field_number, wire_type, is, self.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u32 {
-        let mut my_size = 0;
-        if self.status != super::status::Status::OK {
-            my_size += ::protobuf::rt::enum_size(3, self.status);
-        }
-        if !self.generated_uuid.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(4, &self.generated_uuid);
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.get_unknown_fields());
-        self.cached_size.set(my_size);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::ProtobufResult<()> {
-        if self.status != super::status::Status::OK {
-            os.write_enum(3, ::protobuf::ProtobufEnum::value(&self.status))?;
-        }
-        if !self.generated_uuid.is_empty() {
-            os.write_bytes(4, &self.generated_uuid)?;
-        }
-        os.write_unknown_fields(self.get_unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn get_cached_size(&self) -> u32 {
-        self.cached_size.get()
-    }
-
-    fn get_unknown_fields(&self) -> &::protobuf::UnknownFields {
-        &self.unknown_fields
-    }
-
-    fn mut_unknown_fields(&mut self) -> &mut ::protobuf::UnknownFields {
-        &mut self.unknown_fields
-    }
-
-    fn as_any(&self) -> &dyn (::std::any::Any) {
-        self as &dyn (::std::any::Any)
-    }
-    fn as_any_mut(&mut self) -> &mut dyn (::std::any::Any) {
-        self as &mut dyn (::std::any::Any)
-    }
-    fn into_any(self: ::std::boxed::Box<Self>) -> ::std::boxed::Box<dyn (::std::any::Any)> {
-        self
-    }
-
-    fn descriptor(&self) -> &'static ::protobuf::reflect::MessageDescriptor {
-        Self::descriptor_static()
-    }
-
-    fn new() -> BeginReply {
-        BeginReply::new()
-    }
-
-    fn descriptor_static() -> &'static ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::LazyV2<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::LazyV2::INIT;
-        descriptor.get(|| {
-            let mut fields = ::std::vec::Vec::new();
-            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeEnum<super::status::Status>>(
-                "status",
-                |m: &BeginReply| { &m.status },
-                |m: &mut BeginReply| { &mut m.status },
-            ));
-            fields.push(::protobuf::reflect::accessor::make_simple_field_accessor::<_, ::protobuf::types::ProtobufTypeBytes>(
-                "generated_uuid",
-                |m: &BeginReply| { &m.generated_uuid },
-                |m: &mut BeginReply| { &mut m.generated_uuid },
-            ));
-            ::protobuf::reflect::MessageDescriptor::new_pb_name::<BeginReply>(
-                "BeginReply",
-                fields,
-                file_descriptor_proto()
-            )
-        })
-    }
-
-    fn default_instance() -> &'static BeginReply {
-        static instance: ::protobuf::rt::LazyV2<BeginReply> = ::protobuf::rt::LazyV2::INIT;
-        instance.get(BeginReply::new)
-    }
-}
-
-impl ::protobuf::Clear for BeginReply {
-    fn clear(&mut self) {
-        self.status = super::status::Status::OK;
-        self.generated_uuid.clear();
-        self.unknown_fields.clear();
-    }
-}
-
-impl ::std::fmt::Debug for BeginReply {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for BeginReply {
-    fn as_ref(&self) -> ::protobuf::reflect::ReflectValueRef {
-        ::protobuf::reflect::ReflectValueRef::Message(self)
-    }
-}
-
 #[derive(Clone,PartialEq,Eq,Debug,Hash)]
 pub enum Type {
     ONESHOT = 0,
@@ -1455,26 +1265,24 @@ impl ::protobuf::reflect::ProtobufValue for Compression {
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\rmessage.proto\x1a\x0e./status.proto\"=\n\x06Header\x12\x1b\n\x04type\
-    \x18\x01\x20\x01(\x0e2\x05.TypeR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\
-    \x20\x01(\x0cR\x04uuidB\0:\0\"c\n\x07Oneshot\x12$\n\x04type\x18\x01\x20\
-    \x01(\x0e2\x05.Type:\x07ONESHOTR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\
-    \x20\x01(\x0cR\x04uuidB\0\x12\x1a\n\x07message\x18\x03\x20\x01(\x0cR\x07\
-    messageB\0:\0\"\x8f\x01\n\x05Begin\x12\"\n\x04type\x18\x01\x20\x01(\x0e2\
-    \x05.Type:\x05BEGINR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\
-    \x04uuidB\0\x120\n\x0bcompression\x18\x03\x20\x01(\x0e2\x0c.CompressionR\
-    \x0bcompressionB\0\x12\x18\n\x06length\x18\x04\x20\x01(\x04R\x06lengthB\
-    \0:\0\"w\n\x07Process\x12$\n\x04type\x18\x01\x20\x01(\x0e2\x05.Type:\x07\
-    PROCESSR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0\
-    \x12\x12\n\x03seq\x18\x03\x20\x01(\x04R\x03seqB\0\x12\x1a\n\x07message\
-    \x18\x04\x20\x01(\x0cR\x07messageB\0:\0\"?\n\x03End\x12\x20\n\x04type\
-    \x18\x01\x20\x01(\x0e2\x05.Type:\x03ENDR\x04typeB\0\x12\x14\n\x04uuid\
-    \x18\x02\x20\x01(\x0cR\x04uuidB\0:\0\"Z\n\nBeginReply\x12!\n\x06status\
-    \x18\x03\x20\x01(\x0e2\x07.StatusR\x06statusB\0\x12'\n\x0egenerated_uuid\
-    \x18\x04\x20\x01(\x0cR\rgeneratedUuidB\0:\0*6\n\x04Type\x12\x0b\n\x07ONE\
-    SHOT\x10\0\x12\t\n\x05BEGIN\x10\x01\x12\x0b\n\x07PROCESS\x10\x02\x12\x07\
-    \n\x03END\x10\x03\x1a\0*%\n\x0bCompression\x12\x08\n\x04NONE\x10\0\x12\n\
-    \n\x06SNAPPY\x10\x01\x1a\0B\0b\x06proto3\
+    \n\rmessage.proto\"=\n\x06Header\x12\x1b\n\x04type\x18\x01\x20\x01(\x0e2\
+    \x05.TypeR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0\
+    :\0\"c\n\x07Oneshot\x12$\n\x04type\x18\x01\x20\x01(\x0e2\x05.Type:\x07ON\
+    ESHOTR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0\x12\
+    \x1a\n\x07message\x18\x03\x20\x01(\x0cR\x07messageB\0:\0\"\x8f\x01\n\x05\
+    Begin\x12\"\n\x04type\x18\x01\x20\x01(\x0e2\x05.Type:\x05BEGINR\x04typeB\
+    \0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0\x120\n\x0bcompress\
+    ion\x18\x03\x20\x01(\x0e2\x0c.CompressionR\x0bcompressionB\0\x12\x18\n\
+    \x06length\x18\x04\x20\x01(\x04R\x06lengthB\0:\0\"w\n\x07Process\x12$\n\
+    \x04type\x18\x01\x20\x01(\x0e2\x05.Type:\x07PROCESSR\x04typeB\0\x12\x14\
+    \n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0\x12\x12\n\x03seq\x18\x03\x20\
+    \x01(\x04R\x03seqB\0\x12\x1a\n\x07message\x18\x04\x20\x01(\x0cR\x07messa\
+    geB\0:\0\"?\n\x03End\x12\x20\n\x04type\x18\x01\x20\x01(\x0e2\x05.Type:\
+    \x03ENDR\x04typeB\0\x12\x14\n\x04uuid\x18\x02\x20\x01(\x0cR\x04uuidB\0:\
+    \0*6\n\x04Type\x12\x0b\n\x07ONESHOT\x10\0\x12\t\n\x05BEGIN\x10\x01\x12\
+    \x0b\n\x07PROCESS\x10\x02\x12\x07\n\x03END\x10\x03\x1a\0*%\n\x0bCompress\
+    ion\x12\x08\n\x04NONE\x10\0\x12\n\n\x06SNAPPY\x10\x01\x1a\0B\0b\x06proto\
+    3\
 ";
 
 static file_descriptor_proto_lazy: ::protobuf::rt::LazyV2<::protobuf::descriptor::FileDescriptorProto> = ::protobuf::rt::LazyV2::INIT;

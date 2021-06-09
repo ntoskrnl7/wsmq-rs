@@ -1,7 +1,5 @@
 syntax = "proto3";
 
-import "./status.proto";
-
 enum Type {
     ONESHOT = 0;
     BEGIN = 1;
@@ -42,9 +40,4 @@ message Process {
 message End {
     Type type = 1 [default = END];
     bytes uuid = 2;
-}
-
-message BeginReply {
-    Status status = 3;
-    bytes generated_uuid = 4;
 }
