@@ -74,7 +74,7 @@ async fn basic_test() {
         }
         wsmq_rs::server::run_with_config(
             &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
-            move |addr, res| {
+            move |addr, res, _| {
                 let mut message = res
                     .to_message::<protos::test::TestMessage>()
                     .expect("[server] Failed to to_message");
@@ -144,7 +144,7 @@ async fn basic_test_err() {
 
         if let Err(err) = wsmq_rs::server::run_with_config(
             &SocketAddr::from_str("0.0.0.0:65001").unwrap(),
-            move |addr, res| match res.to_message::<protos::test::TestMessage>() {
+            move |addr, res, _| match res.to_message::<protos::test::TestMessage>() {
                 Ok(mut message) => {
                     println!("[server] On message : {}, {:?}", addr, message);
                     message.set_caption("server pong".to_string());
@@ -173,10 +173,10 @@ async fn basic_test_err() {
                 .on_connect(Box::new(move |addr| {
                     println!("[server] Connected : {}", addr);
                 }))
-                .on_disconnect(Box::new(move |addr| {
+                .on_disconnect(Box::new(move |addr, _| {
                     println!("[server] Disconnected : {}", addr);
                 }))
-                .on_error(Box::new(move |err| {
+                .on_error(Box::new(move |err, _| {
                     println!("[server] Error : {}", err);
                 })),
         )
@@ -345,7 +345,7 @@ async fn complex_test() {
         let client_map_on_connected = client_map.clone();
         if let Err(err) = wsmq_rs::server::run_with_config(
             &SocketAddr::from_str("0.0.0.0:65002").unwrap(),
-            move |addr, res| {
+            move |addr, res, _| {
                 let client_map = client_map_on_message.clone();
                 match res.to_message::<protos::test::TestMessage>() {
                     Ok(mut message) => {
@@ -393,10 +393,10 @@ async fn complex_test() {
                     client_map.lock().unwrap().insert(addr, 0);
                     println!("[server] Connected : {}", addr);
                 }))
-                .on_disconnect(Box::new(move |addr| {
+                .on_disconnect(Box::new(move |addr, _| {
                     println!("[server] Disconnected : {}", addr);
                 }))
-                .on_error(Box::new(move |err| {
+                .on_error(Box::new(move |err, _| {
                     println!("[server] Error : {}", err);
                 })),
         )
@@ -464,7 +464,7 @@ async fn send_large_message_test() {
             let inst2 = inst.clone();
             wsmq_rs::server::run_with_config(
                 &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
-                move |addr, res| {
+                move |addr, res, _| {
                     let message = res
                         .to_message::<protos::test::TestMessage>()
                         .expect("[server] Failed to to_message");
@@ -488,7 +488,7 @@ async fn send_large_message_test() {
                             test_client(test_data.to_vec(), inst3.clone()).await;
                         });
                     }))
-                    .on_progress(Box::new(|ctx| {
+                    .on_progress(Box::new(|ctx, _| {
                         println!(
                             "[server] {:?} : {}/{}",
                             ctx.method, ctx.current, ctx.total_length
@@ -563,7 +563,7 @@ async fn send_large_message_ping_pong_test() {
         let test_data3 = test_data.clone();
         wsmq_rs::server::run_with_config(
             &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
-            move |addr, res| {
+            move |addr, res, _| {
                 let mut message = res
                     .to_message::<protos::test::TestMessage>()
                     .expect("[server] Failed to to_message");
@@ -596,7 +596,7 @@ async fn send_large_message_ping_pong_test() {
                         svc.lock().unwrap().stop().unwrap();
                     });
                 }))
-                .on_progress(Box::new(|ctx| {
+                .on_progress(Box::new(|ctx, _| {
                     println!(
                         "[server] {:?} : {}/{}",
                         ctx.method, ctx.current, ctx.total_length
@@ -607,6 +607,225 @@ async fn send_large_message_ping_pong_test() {
         .unwrap();
     });
     match tokio::time::timeout(Duration::from_secs(60), f).await {
+        Ok(_) => {}
+        Err(err) => panic!("timeouted : {}", err),
+    };
+}
+
+#[tokio::test]
+async fn context_test() {
+    struct TestContext {
+        pub number: u16,
+    }
+
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+        async fn test_client() {
+            let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65000").unwrap())
+                .await
+                .expect("[client] Failed to client::connect");
+            let mut message = protos::test::TestMessage::new();
+            message.set_caption("client ping".to_string());
+            message.set_seq(1);
+            message.set_need_to_rely(true);
+            println!("[client] send_message({:?})", message);
+            let res = client
+                .send_message(&message)
+                .unwrap()
+                .await
+                .expect("Failed to send_message");
+            let message = res
+                .to_message::<protos::test::TestMessage>()
+                .expect("[client] Failed to to_message");
+            println!("[client] Message received ({:?})", message);
+            assert_eq!(message.get_caption(), "server pong");
+            assert_eq!(message.get_seq(), 1);
+            println!("[client] Done");
+        }
+        wsmq_rs::server::run_with_config2(
+            &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
+            move |addr, res, ctx| {
+                let x = match addr {
+                    SocketAddr::V4(ip) => ip.port() - 1,
+                    SocketAddr::V6(ip) => ip.port() - 1,
+                };
+                let y = ctx.number;
+                println!("on_message({}) : {} = {}", addr, x, y);
+                assert_eq!(x, y);
+                ctx.number = 10;
+                println!("change ctx.number to {}", 10);
+                let mut message = res
+                    .to_message::<protos::test::TestMessage>()
+                    .expect("[server] Failed to to_message");
+                println!("[server] message received({:?}) : {} ", message, addr);
+                assert_eq!(message.get_caption(), "client ping");
+                assert_eq!(message.get_seq(), 1);
+                message.set_caption("server pong".to_string());
+                block_on(res.send_message(&message))
+                    .expect("[server] Failed to reply send_message");
+                println!("[server] send_message({:?}) : {} ", message, addr);
+                println!("[server] Done");
+            },
+            Some(
+                server::Config::<TestContext>::new(1024 * 1024 * 16)
+                    .on_started(Box::new(move || {
+                        tokio::spawn(async move {
+                            test_client().await;
+                        });
+                    }))
+                    .on_connect(Box::new(move |addr| match addr {
+                        SocketAddr::V4(ip) => {
+                            println!("on_connected({}) : {}", addr, ip.port() - 1);
+                            TestContext {
+                                number: ip.port() - 1,
+                            }
+                        }
+                        SocketAddr::V6(ip) => {
+                            println!("on_connect({}) : {}", addr, ip.port() - 1);
+                            TestContext {
+                                number: ip.port() - 1,
+                            }
+                        }
+                    }))
+                    .on_disconnect(Box::new(move |addr, ref ctx| {
+                        let svc = svc.clone();
+                        let x = match addr {
+                            SocketAddr::V4(ip) => ip.port() - 1,
+                            SocketAddr::V6(ip) => ip.port() - 1,
+                        };
+                        let y = ctx.number;
+                        println!("on_disconnect({}) : {} != {}, {} = 10", addr, x, y, y);
+                        assert_eq!(10, y);
+                        svc.lock().unwrap().stop().unwrap();
+                    }))
+                    .on_error(Box::new(move |err, ctx| {
+                        if let Some(ctx) = ctx {
+                            println!("on_error : {}, {}", err, ctx.number);
+                        } else {
+                            println!("on_error : {}", err);
+                        }
+                    })),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(30), f).await {
+        Ok(_) => {}
+        Err(err) => panic!("timeouted : {}", err),
+    };
+}
+
+#[tokio::test]
+async fn context_test_with_thread() {
+    struct TestContext {
+        pub number: u16,
+    }
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+        async fn test_client() {
+            let client = wsmq_rs::client::connect(&Url::parse("ws://127.0.0.1:65000").unwrap())
+                .await
+                .expect("[client] Failed to client::connect");
+            let mut message = protos::test::TestMessage::new();
+            message.set_caption("client ping".to_string());
+            message.set_seq(1);
+            message.set_need_to_rely(true);
+            println!("[client] send_message({:?})", message);
+            let res = client
+                .send_message(&message)
+                .unwrap()
+                .await
+                .expect("Failed to send_message");
+            let message = res
+                .to_message::<protos::test::TestMessage>()
+                .expect("[client] Failed to to_message");
+            println!("[client] Message received ({:?})", message);
+            assert_eq!(message.get_caption(), "server pong");
+            assert_eq!(message.get_seq(), 1);
+            println!("[client] Done");
+        }
+        wsmq_rs::server::run_with_config2(
+            &SocketAddr::from_str("0.0.0.0:65000").unwrap(),
+            move |addr, res, ctx| {
+                //Response의 지역 라이프타임을 제거해야함.
+                // 그런데 Response를 병렬로 처리하는게 올바른지, 효율적인지 판단할 필요가 있음.
+
+                // 역시 이걸로도 지정된 라이프타임에 대한 처리는 불가능함...
+                // lifetime_thread::async_spawn(rex, |inner| async move {
+                //     let x = inner.get();
+                // });
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let x = match addr {
+                        SocketAddr::V4(ip) => ip.port() - 1,
+                        SocketAddr::V6(ip) => ip.port() - 1,
+                    };
+                    let y = ctx.lock().unwrap().number;
+                    println!("on_message({}) : {} = {}", addr, x, y);
+                    assert_eq!(x, y);
+                    ctx.lock().unwrap().number = 10;
+                    println!("change ctx.number to {}", 10);
+                });
+
+                let mut message = res
+                    .to_message::<protos::test::TestMessage>()
+                    .expect("[server] Failed to to_message");
+                println!("[server] message received({:?}) : {} ", message, addr);
+                assert_eq!(message.get_caption(), "client ping");
+                assert_eq!(message.get_seq(), 1);
+                message.set_caption("server pong".to_string());
+                block_on(res.send_message(&message))
+                    .expect("[server] Failed to reply send_message");
+                println!("[server] send_message({:?}) : {} ", message, addr);
+                println!("[server] Done");
+            },
+            Some(
+                server::Config::<Arc<Mutex<TestContext>>>::new(1024 * 1024 * 16)
+                    .on_started(Box::new(move || {
+                        tokio::spawn(async move {
+                            test_client().await;
+                        });
+                    }))
+                    .on_connect(Box::new(move |addr| match addr {
+                        SocketAddr::V4(ip) => {
+                            println!("on_connected({}) : {}", addr, ip.port() - 1);
+                            Arc::new(Mutex::new(TestContext {
+                                number: ip.port() - 1,
+                            }))
+                        }
+                        SocketAddr::V6(ip) => {
+                            println!("on_connect({}) : {}", addr, ip.port() - 1);
+                            Arc::new(Mutex::new(TestContext {
+                                number: ip.port() - 1,
+                            }))
+                        }
+                    }))
+                    .on_disconnect(Box::new(move |addr, ctx| {
+                        let svc = svc.clone();
+                        let ctx = ctx.clone();
+                        std::thread::spawn(move || {
+                            let x = match addr {
+                                SocketAddr::V4(ip) => ip.port() - 1,
+                                SocketAddr::V6(ip) => ip.port() - 1,
+                            };
+                            let y = ctx.lock().unwrap().number;
+                            println!("on_disconnect({}) : {} != {}, {} = 10", addr, x, y, y);
+                            assert_eq!(10, y);
+                            svc.lock().unwrap().stop().unwrap();
+                        });
+                    }))
+                    .on_error(Box::new(move |err, ctx| {
+                        if let Some(ctx) = ctx {
+                            println!("on_error : {}, {}", err, ctx.lock().unwrap().number);
+                        } else {
+                            println!("on_error : {}", err);
+                        }
+                    })),
+            ),
+        )
+        .await
+        .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(30), f).await {
         Ok(_) => {}
         Err(err) => panic!("timeouted : {}", err),
     };

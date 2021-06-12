@@ -30,8 +30,6 @@ impl ProgressContext {
     }
 }
 
-pub(crate) type OnProgress = Box<dyn Fn(&ProgressContext) + Send + Sync>;
-
 #[macro_export]
 macro_rules! message_dispatch {
     ($contexts:expr, $data:expr, $on_message:expr, $on_callback:expr, $on_error:expr) => {
@@ -60,12 +58,14 @@ macro_rules! message_dispatch {
                                         canceled: false,
                                     },
                                 ) {
-                                    $on_callback(&ProgressContext::new(
-                                        message::Type::BEGIN,
-                                        uuid,
-                                        begin.get_length(),
-                                        0,
-                                    ));
+                                    $on_callback(
+                                        &ProgressContext::new(
+                                            message::Type::BEGIN,
+                                            uuid,
+                                            begin.get_length(),
+                                            0,
+                                        ),
+                                    );
                                 }
                             }
                         }

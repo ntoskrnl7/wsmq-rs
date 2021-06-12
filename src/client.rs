@@ -1,12 +1,11 @@
 use crate::{
-    callbacks::OnError,
-    define_method,
+    define_set_callback,
     error::Error,
-    message::OnProgress,
+    message::MessageContext,
+    message_dispatch,
     response::{ResponseFuture, ResponseShared},
     Result,
 };
-use crate::{message::MessageContext, message_dispatch};
 use futures::{future, pin_mut, StreamExt};
 use protobuf::Message;
 use std::{
@@ -17,6 +16,9 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::connect_async;
 use url::Url;
 use uuid::Uuid;
+
+type OnProgress = Box<dyn Fn(&crate::message::ProgressContext) + Send + Sync>;
+type OnError = Box<dyn Fn(Box<dyn std::error::Error>) + Send + Sync>;
 
 pub struct Config {
     bandwidth: usize,
@@ -32,8 +34,8 @@ impl Config {
             on_progress: None,
         }
     }
-    define_method!(on_error, OnError);
-    define_method!(on_progress, OnProgress);
+    define_set_callback!(on_error, OnError);
+    define_set_callback!(on_progress, OnProgress);
 }
 
 pub struct Client {
