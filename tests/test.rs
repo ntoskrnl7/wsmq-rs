@@ -666,7 +666,7 @@ async fn context_test() {
                 println!("[server] Done");
             },
             Some(
-                server::Config::<TestContext>::new(1024 * 1024 * 16)
+                server::Config::new(1024 * 1024 * 16)
                     .on_started(Box::new(move || {
                         tokio::spawn(async move {
                             test_client().await;
@@ -779,7 +779,7 @@ async fn context_test_with_thread() {
                 println!("[server] Done");
             },
             Some(
-                server::Config::<Arc<Mutex<TestContext>>>::new(1024 * 1024 * 16)
+                server::Config::new(1024 * 1024 * 16)
                     .on_started(Box::new(move || {
                         tokio::spawn(async move {
                             test_client().await;
