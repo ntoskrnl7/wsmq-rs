@@ -1,15 +1,6 @@
-use crate::{
-    error::Error,
-    protos::{self, message::Type},
-    Result,
-};
+use crate::{error::Error, shared::SharedData, Result};
 use core::task::Waker;
-use futures_channel::mpsc::UnboundedSender;
-use protobuf::Message;
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 use std::{future::Future, task::Poll};
 use uuid::Uuid;
 
@@ -21,19 +12,19 @@ pub enum Status {
     Completed(Vec<u8>),
 }
 
-pub struct Response<'a> {
+pub struct Response {
     uuid: Uuid,
     data: Vec<u8>,
-    shared: &'a ResponseShared,
+    shared: Arc<SharedData>,
 }
 
-impl<'a> Response<'a> {
-    pub fn new(uuid: Uuid, data: Vec<u8>, shared: &'a ResponseShared) -> Self {
+impl Response {
+    pub fn new(uuid: Uuid, data: Vec<u8>, shared: Arc<SharedData>) -> Self {
         Response { uuid, data, shared }
     }
 }
 
-impl<'a> Response<'a> {
+impl Response {
     pub fn to_vec(&self) -> &Vec<u8> {
         &self.data
     }
@@ -48,45 +39,49 @@ impl<'a> Response<'a> {
         }
     }
 
-    pub async fn send_message(
-        &self,
-        message: &dyn protobuf::Message,
-    ) -> Result<ResponseFuture<'a>> {
-        if let Ok(mut map) = self.shared.responses.lock() {
-            if let None = map.get(&self.uuid) {
-                map.insert(self.uuid, crate::response::Status::None);
-            }
+    pub async fn reply(&self, message: Vec<u8>) -> Result<ResponseFuture> {
+        let mut map = self.shared.get_responses()?;
+        if let None = map.get(&self.uuid) {
+            map.insert(self.uuid, crate::response::Status::None);
+        }
+        self.shared.send(self.uuid, message)
+    }
+
+    pub async fn reply_message(&self, message: &dyn protobuf::Message) -> Result<ResponseFuture> {
+        let mut map = self.shared.get_responses()?;
+        if let None = map.get(&self.uuid) {
+            map.insert(self.uuid, crate::response::Status::None);
         }
         self.shared.send_message(self.uuid, message)
     }
 }
 
-pub struct ResponseFuture<'a> {
+pub struct ResponseFuture {
     uuid: Uuid,
-    shared: &'a ResponseShared,
+    shared: Arc<SharedData>,
 }
 
-impl<'a> ResponseFuture<'a> {
-    pub(crate) fn new(uuid: Uuid, shared: &'a ResponseShared) -> Self {
+impl ResponseFuture {
+    pub(crate) fn new(uuid: Uuid, shared: Arc<SharedData>) -> Self {
         ResponseFuture { uuid, shared }
     }
 }
 
-impl<'a> Drop for ResponseFuture<'a> {
+impl Drop for ResponseFuture {
     fn drop(&mut self) {
-        if let Ok(mut responses) = self.shared.responses.lock() {
+        if let Ok(mut responses) = self.shared.get_responses() {
             responses.remove(&self.uuid);
         }
     }
 }
 
-impl<'a> Future for ResponseFuture<'a> {
-    type Output = Result<Response<'a>>;
+impl Future for ResponseFuture {
+    type Output = Result<Response>;
     fn poll(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
-        if let Ok(mut responses) = self.shared.responses.lock() {
+        if let Ok(mut responses) = self.shared.get_responses() {
             if let Some(status) = responses.get_mut(&self.uuid) {
                 match status {
                     Status::None => {
@@ -100,7 +95,7 @@ impl<'a> Future for ResponseFuture<'a> {
                         return Poll::Ready(Ok(Response::new(
                             self.uuid,
                             data.drain(..).collect(),
-                            self.shared,
+                            self.shared.clone(),
                         )));
                     }
                 }
@@ -108,135 +103,6 @@ impl<'a> Future for ResponseFuture<'a> {
             Poll::Ready(Err(Error::NotFound()))
         } else {
             Poll::Ready(Err(Error::MutexError()))
-        }
-    }
-}
-
-pub struct ResponseShared {
-    pub bandwidth: usize,
-    pub responses: Arc<Mutex<ResponseStatusMap>>,
-    pub tx: UnboundedSender<tokio_tungstenite::tungstenite::Message>,
-}
-
-impl ResponseShared {
-    pub(crate) fn generate_uuid(&self) -> Uuid {
-        match self.responses.lock() {
-            Ok(mut map) => loop {
-                let uuid = Uuid::new_v4();
-                if map.iter().find(|e| e.0 == &uuid).is_none() {
-                    map.insert(uuid, crate::response::Status::None);
-                    break uuid;
-                }
-            },
-            Err(_) => Uuid::nil(),
-        }
-    }
-
-    pub fn send(&self, uuid: Uuid, message: Vec<u8>) -> Result<ResponseFuture> {
-        let mut oneshot = protos::message::Oneshot::new();
-        oneshot.set_field_type(Type::ONESHOT);
-        oneshot.set_uuid(uuid.as_bytes().to_vec());
-        oneshot.set_message(message);
-        match oneshot.write_to_bytes() {
-            Ok(message) => {
-                match self
-                    .tx
-                    .unbounded_send(tokio_tungstenite::tungstenite::Message::binary(message))
-                {
-                    Ok(_) => Ok(ResponseFuture::new(uuid, self)),
-                    Err(err) => return Err(Error::InternalError(Box::new(err))),
-                }
-            }
-            Err(err) => return Err(Error::InternalError(Box::new(err))),
-        }
-    }
-
-    pub fn send_large_message(
-        &self,
-        uuid: Uuid,
-        message: &dyn protobuf::Message,
-    ) -> Result<ResponseFuture> {
-        let mut begin = protos::message::Begin::new();
-        begin.set_field_type(Type::BEGIN);
-        begin.set_uuid(uuid.as_bytes().to_vec());
-        begin.set_compression(protos::message::Compression::SNAPPY);
-        let mut wtr = snap::write::FrameEncoder::new(vec![]);
-        match message.write_to_writer(&mut wtr) {
-            Ok(_) => match wtr.into_inner() {
-                Ok(mut message) => {
-                    begin.set_length(message.len() as u64);
-                    match begin.write_to_bytes() {
-                        Ok(msg) => {
-                            match self.tx.unbounded_send(
-                                tokio_tungstenite::tungstenite::Message::binary(msg),
-                            ) {
-                                Ok(_) => {
-                                    let mut seq = 0;
-                                    let mut process = protos::message::Process::new();
-                                    process.set_field_type(Type::PROCESS);
-                                    process.set_uuid(begin.get_uuid().to_vec());
-                                    for chunk in message.chunks_mut(self.bandwidth) {
-                                        process.set_seq(seq);
-                                        process.set_message(chunk.to_vec());
-                                        match process.write_to_bytes() {
-                                            Ok(msg) => match self.tx.unbounded_send(
-                                                tokio_tungstenite::tungstenite::Message::binary(
-                                                    msg,
-                                                ),
-                                            ) {
-                                                Ok(_) => {
-                                                    seq += 1;
-                                                }
-                                                Err(err) => {
-                                                    return Err(Error::InternalError(Box::new(err)))
-                                                }
-                                            },
-                                            Err(err) => {
-                                                return Err(Error::InternalError(Box::new(err)))
-                                            }
-                                        }
-                                    }
-                                    let mut end = protos::message::End::new();
-                                    end.set_field_type(Type::END);
-                                    end.set_uuid(begin.get_uuid().to_vec());
-                                    match end.write_to_bytes() {
-                                        Ok(msg) => match self.tx.unbounded_send(
-                                            tokio_tungstenite::tungstenite::Message::binary(msg),
-                                        ) {
-                                            Ok(_) => {}
-                                            Err(err) => {
-                                                return Err(Error::InternalError(Box::new(err)))
-                                            }
-                                        },
-                                        Err(err) => {
-                                            return Err(Error::InternalError(Box::new(err)))
-                                        }
-                                    }
-                                    Ok(ResponseFuture::new(uuid, self))
-                                }
-                                Err(err) => return Err(Error::InternalError(Box::new(err))),
-                            }
-                        }
-                        Err(err) => return Err(Error::InternalError(Box::new(err))),
-                    }
-                }
-                Err(err) => return Err(Error::InternalError(Box::new(err))),
-            },
-            Err(err) => return Err(Error::InternalError(Box::new(err))),
-        }
-    }
-
-    pub fn send_message(
-        &self,
-        uuid: Uuid,
-        message: &dyn protobuf::Message,
-    ) -> Result<ResponseFuture> {
-        if message.compute_size() > self.bandwidth as u32 {
-            return self.send_large_message(uuid, message);
-        }
-        match message.write_to_bytes() {
-            Ok(vec) => self.send(uuid, vec),
-            Err(err) => Err(Error::InternalError(Box::new(err))),
         }
     }
 }

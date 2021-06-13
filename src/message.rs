@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use uuid::Uuid;
 
 use crate::protos::message;
@@ -6,14 +8,15 @@ pub struct MessageContext {
     pub compression: crate::protos::message::Compression,
     pub total_length: u64,
     pub buffer: Vec<u8>,
-    pub canceled: bool,
 }
 
+#[derive(Debug)]
 pub struct ProgressContext {
     pub method: message::Type,
     uuid: Uuid,
     pub total_length: u64,
     pub current: u64,
+    pub canceled: AtomicBool,
 }
 
 impl ProgressContext {
@@ -23,19 +26,24 @@ impl ProgressContext {
             uuid,
             total_length,
             current,
+            canceled: AtomicBool::new(false),
         }
     }
     pub fn uuid(&self) -> Uuid {
         self.uuid
     }
+    pub fn cancel(&self) {
+        self.canceled.store(true, Ordering::Relaxed);
+    }
 }
 
 #[macro_export]
 macro_rules! message_dispatch {
-    ($contexts:expr, $data:expr, $on_message:expr, $on_callback:expr, $on_error:expr) => {
+    ($contexts:expr, $data:expr, $on_message:expr, $on_callback:expr, $on_error:expr, $on_canceled:expr) => {
         use crate::message::ProgressContext;
         use crate::protos::message;
         use std::io::Read;
+        use std::sync::atomic::Ordering;
 
         let data = $data;
         match message::Header::parse_from_bytes(data) {
@@ -49,23 +57,23 @@ macro_rules! message_dispatch {
                     message::Type::BEGIN => {
                         if let Ok(begin) = message::Begin::parse_from_bytes(data) {
                             if let Ok(uuid) = Uuid::from_slice(begin.get_uuid()) {
-                                if let Some(_) = $contexts.lock().unwrap().insert(
+                                $contexts.lock().unwrap().insert(
                                     uuid,
                                     MessageContext {
                                         compression: begin.get_compression(),
                                         total_length: begin.get_length(),
                                         buffer: Vec::new(),
-                                        canceled: false,
                                     },
-                                ) {
-                                    $on_callback(
-                                        &ProgressContext::new(
-                                            message::Type::BEGIN,
-                                            uuid,
-                                            begin.get_length(),
-                                            0,
-                                        ),
-                                    );
+                                );
+                                let pctx = ProgressContext::new(
+                                    message::Type::BEGIN,
+                                    uuid,
+                                    begin.get_length(),
+                                    0,
+                                );
+                                $on_callback(&pctx);
+                                if pctx.canceled.load(Ordering::Relaxed) {
+                                    $on_canceled(&pctx);
                                 }
                             }
                         }
@@ -77,13 +85,16 @@ macro_rules! message_dispatch {
                                     $contexts.lock().unwrap().get_mut(&uuid)
                                 {
                                     context.buffer.extend(process.get_message());
-                                    $on_callback(&ProgressContext::new(
+                                    let pctx = ProgressContext::new(
                                         message::Type::PROCESS,
                                         uuid,
                                         context.total_length,
                                         context.buffer.len() as u64,
-                                    ));
-                                    if context.canceled {}
+                                    );
+                                    $on_callback(&pctx);
+                                    if pctx.canceled.load(Ordering::Relaxed) {
+                                        $on_canceled(&pctx);
+                                    }
                                 }
                             }
                         }
@@ -128,5 +139,6 @@ macro_rules! message_dispatch {
                 $on_error(Box::new(err));
             }
         }
+        false
     };
 }

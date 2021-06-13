@@ -1,20 +1,22 @@
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-};
-
-use futures::{future, StreamExt, TryStreamExt};
-use futures_channel::mpsc::unbounded;
-use protobuf::Message;
-use uuid::Uuid;
-
 use crate::{
     define_set_callback,
     message::{MessageContext, ProgressContext},
     message_dispatch,
-    response::{Response, ResponseShared},
+    response::Response,
+    shared::SharedData,
+    Result,
 };
+use futures::{future, StreamExt, TryStreamExt};
+use futures_channel::mpsc::unbounded;
+use protobuf::Message;
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    vec,
+};
+use uuid::Uuid;
 
 pub type OnStarted = Box<dyn Fn() + Send + Sync>;
 pub type OnConnect<Context> = Box<dyn Fn(SocketAddr) -> Context + Send + Sync>;
@@ -50,33 +52,65 @@ impl<Context> Config<Context> {
     define_set_callback!(on_connect, OnConnect<Context>);
 }
 
-pub async fn run<
-    OnMessage: Fn(SocketAddr, crate::response::Response, &mut ()) -> () + Send + Sync + 'static,
->(
-    addr: &SocketAddr,
-    on_message: OnMessage,
-) -> crate::Result<()> {
-    run_with_config2::<(), OnMessage>(addr, on_message, None).await
+pub trait Address {
+    fn into(self) -> Result<SocketAddr>;
 }
 
-pub async fn run_with_config<
+impl<'a> Address for &'a str {
+    fn into(self) -> Result<SocketAddr> {
+        match SocketAddr::from_str(self) {
+            Ok(addr) => Ok(addr),
+            Err(err) => Err(crate::error::Error::InternalError(Box::new(err))),
+        }
+    }
+}
+
+impl<'a> Address for &'a SocketAddr {
+    fn into(self) -> Result<SocketAddr> {
+        Ok(*self)
+    }
+}
+
+pub async fn run<Addr, OnMessage>(addr: Addr, on_message: OnMessage) -> crate::Result<()>
+where
+    Addr: Address + Unpin,
     OnMessage: Fn(SocketAddr, crate::response::Response, &mut ()) -> () + Send + Sync + 'static,
->(
-    addr: &SocketAddr,
+{
+    run_with_config2::<Addr, OnMessage, ()>(addr, on_message, None).await
+}
+
+pub async fn run_with_config<Addr, OnMessage, Context>(
+    addr: Addr,
     on_message: OnMessage,
-    config: Config<()>,
-) -> crate::Result<()> {
+    config: Config<Context>,
+) -> crate::Result<()>
+where
+    Addr: Address + Unpin,
+    Context: 'static + Send,
+    OnMessage:
+        Fn(SocketAddr, crate::response::Response, &mut Context) -> () + Send + Sync + 'static,
+{
     run_with_config2(addr, on_message, Some(config)).await
 }
 
-pub async fn run_with_config2<
-    Context: 'static + Send,
-    OnMessage: Fn(SocketAddr, crate::response::Response, &mut Context) -> () + Send + Sync + 'static,
->(
-    addr: &SocketAddr,
+async fn run_with_config2<Addr, OnMessage, Context>(
+    addr: Addr,
     on_message: OnMessage,
     config: Option<Config<Context>>,
-) -> crate::Result<()> {
+) -> crate::Result<()>
+where
+    Addr: Address + Unpin,
+    Context: 'static + Send,
+    OnMessage:
+        Fn(SocketAddr, crate::response::Response, &mut Context) -> () + Send + Sync + 'static,
+{
+    let addr = match addr.into() {
+        Ok(addr) => addr,
+        Err(err) => {
+            return Err(err);
+        }
+    };
+
     match tokio::net::TcpListener::bind(addr).await {
         Ok(socket) => {
             let config = Arc::new(config);
@@ -86,26 +120,21 @@ pub async fn run_with_config2<
                     on_started();
                 }
             }
-            let config2 = config.clone();
-            let on_message2 = on_message.clone();
             while let Ok((stream, addr)) = socket.accept().await {
-                let config = config2.clone();
-                let on_message = on_message2.clone();
+                let config = config.clone();
+                let on_message = on_message.clone();
                 tokio::spawn(async move {
-                    let config2 = config.clone();
                     match tokio_tungstenite::accept_async(stream).await {
                         Ok(stream) => {
-                            let config = config2.clone();
                             let (tx, rx) = unbounded();
-                            let shared = ResponseShared {
-                                bandwidth: if let Some(config) = config.as_ref() {
+                            let shared = Arc::new(SharedData::new(
+                                if let Some(config) = config.as_ref() {
                                     config.bandwidth
                                 } else {
                                     1024 * 1024 * 16
                                 },
-                                responses: Arc::new(Mutex::new(HashMap::new())),
                                 tx,
-                            };
+                            ));
                             let message_contexts = Arc::new(Mutex::new(HashMap::new()));
                             let mut context: Context = if let Some(config) = config.as_ref() {
                                 if let Some(ref on_connect) = config.on_connect {
@@ -119,13 +148,15 @@ pub async fn run_with_config2<
 
                             let (write, read) = stream.split();
                             let read = read.try_for_each(|message| {
+                                let shared = shared.clone();
+                                let mut canceled = false;
                                 message_dispatch!(
                                     message_contexts,
                                     &message.into_data(),
                                     |uuid, message| {
                                         (on_message)(
                                             addr,
-                                            Response::new(uuid, message, &shared),
+                                            Response::new(uuid, message, shared.clone()),
                                             &mut context,
                                         );
                                     },
@@ -142,8 +173,16 @@ pub async fn run_with_config2<
                                                 on_error(Box::new(err), Some(&mut context));
                                             }
                                         }
+                                    },
+                                    |_| { 
+                                        canceled = true;
                                     }
                                 );
+                                if canceled {
+                                    return future::err::<(), tokio_tungstenite::tungstenite::Error>(
+                                        tokio_tungstenite::tungstenite::Error::ConnectionClosed,
+                                    );
+                                }
                                 future::ok(())
                             });
                             let write = rx.map(Ok).forward(write);
