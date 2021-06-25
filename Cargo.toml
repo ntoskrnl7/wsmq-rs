@@ -7,21 +7,20 @@ edition = "2018"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+thiserror = "1.0.25"
+uuid = { version="0.8.2", features=["v4"] }
+
 futures = "0.3.15"
 futures-util = "0.3.15"
 futures-channel = "0.3.15"
 
-thiserror = "1.0.25"
-uuid = { version = "0.8.2", features = ["v4"] }
-
-url = { version = "2.2.2", features = ["serde"] }
-
-tokio = { version = "1.6.1", features = ["sync", "rt", "time", "rt-multi-thread", "macros"] }
-tokio-tungstenite = { version = "0.14.0", features = ["connect", "rustls"] }
-protobuf = { version = "2.23.0", features = ["with-bytes"] }
+url = { version="2.2.2", features=["serde"] }
+tokio = { version="1.6.1", features=["sync", "rt", "time", "rt-multi-thread", "macros"] }
+tokio-rustls = "0.22.0"
+tokio-tungstenite = { version="0.14.0", features=["connect", "rustls", "rustls-tls"] }
+rustls = { version="0.19.1", features=["dangerous_configuration"] }
+protobuf = { version="2.23.0", features=["with-bytes"] }
 snap = "1.0.5"
 
 [build-dependencies]
@@ -29,10 +28,4 @@ protobuf-codegen-pure = "2.3.1"
 protoc-rust = "2.23.0"
 
 [dev-dependencies]
-futures = "0.3.15"
-protobuf-codegen-pure = "2.3.1"
-protoc-rust = "2.23.0"
-snap = "1.0.5"
-tokio = { version = "1.6.1", features = ["time"] }
-service-rs = { git = "https://github.com/ntoskrnl7/service-rs.git", branch = "main" }
-# service-rs = { path="./service-rs" }
+service-rs = { git="https://github.com/ntoskrnl7/service-rs.git", branch="main" }

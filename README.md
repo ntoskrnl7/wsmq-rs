@@ -3,9 +3,11 @@
 A simple websocket messaging library based on protocol buffers.
 
 ## Example
+
 ### Basic
 
 #### Server
+
 ```rust
 wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
     let mut recieved = res.to_vec().clone();
@@ -19,6 +21,7 @@ wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
 ```
 
 #### Client
+
 ```rust
 let client = wsmq_rs::client::connect("ws://127.0.0.1:8080")
     .await
@@ -29,10 +32,13 @@ let res = client.send(vec![1, 2, 3, 4, 5]).unwrap().await.unwrap();
 let recieved = res.to_vec();
 println!("{:?}", recieved);
 ```
----
-### With Config
 
-#### Server
+---
+
+### With config
+
+#### Server with config
+
 ```rust
 wsmq_rs::server::run_with_config(
     "0.0.0.0:8080",
@@ -43,17 +49,18 @@ wsmq_rs::server::run_with_config(
             res.reply(recieved).await
         });
     },
-    wsmq_rs::server::Config::<()>::new(1024 * 1024 * 6),
+    wsmq_rs::server::Config::<()>::new().set_bandwidth(1024 * 1024 * 6),
 )
 .await
 .unwrap();
 ```
 
-#### Client
+#### Client with config
+
 ```rust
 let client = wsmq_rs::client::connect_with_config(
     "ws://127.0.0.1:8080",
-    wsmq_rs::client::Config::new(1024 * 1024 * 6),
+    wsmq_rs::client::Config::new().set_bandwidth(1024 * 1024 * 6),
 )
 .await
 .unwrap();
@@ -63,10 +70,13 @@ let res = client.send(vec![1, 2, 3, 4, 5]).unwrap().await.unwrap();
 let recieved = res.to_vec();
 println!("{:?}", recieved);
 ```
+
 ---
 
-### With Context
-#### Server
+### With context
+
+#### Server with context
+
 ```rust
 #[derive(Debug)]
 struct Context {
@@ -85,7 +95,8 @@ wsmq_rs::server::run_with_config(
             context.sent += 1;
         }
     },
-    wsmq_rs::server::Config::new(1)
+    wsmq_rs::server::Config::new()
+        set_bandwidth(1024),
         .on_connect(Box::new(|addr| {
             println!("connected ({})", addr);
             Context {
@@ -116,11 +127,12 @@ wsmq_rs::server::run_with_config(
 .unwrap();
 ```
 
-#### Client
+#### Client with context
+
 ```rust
 let client = wsmq_rs::client::connect_with_config(
     "ws://127.0.0.1:8080",
-    wsmq_rs::client::Config::new(1),
+    wsmq_rs::client::Config::new().set_bandwidth(1024),
 )
 .await
 .unwrap();

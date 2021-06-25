@@ -1,5 +1,6 @@
 use futures::executor::block_on;
 use std::{
+    convert::TryInto,
     net::SocketAddr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -17,9 +18,9 @@ macro_rules! define_test_future {
         let inst1 = inst.clone();
         let test_server = async move { $test_code(svc, inst1).await };
         tokio::runtime::Handle::current().spawn_blocking(move || {
-            match inst.do_events(tokio::spawn(test_server)) {
+            match inst.wait_future(tokio::spawn(test_server)) {
                 Ok(event) => match event {
-                    service_rs::service::Event::ServiceStatus(status) => match status {
+                    service_rs::service::Event::StatusChanged(status) => match status {
                         service_rs::service::ServiceStatus::Stopped() => {
                             println!("Service stopped");
                             return;
@@ -37,11 +38,75 @@ macro_rules! define_test_future {
                     },
                 },
                 Err(err) => {
-                    println!("Failed to do_events : {}", err);
+                    println!("Failed to wait_future : {}", err);
                 }
             }
         })
     }};
+}
+
+#[tokio::test]
+async fn basic_wss_test() {
+    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+        async fn test_client() {
+            let client = wsmq_rs::client::connect_with_config(
+                "wss://localhost:65000",
+                wsmq_rs::client::Config::new().no_certificate_verification(),
+            )
+            .await
+            .expect("[client] Failed to client::connect");
+            let mut message = protos::test::TestMessage::new();
+            message.set_caption("client ping".to_string());
+            message.set_seq(1);
+            message.set_need_to_rely(true);
+            println!("[client] send_message({:?})", message);
+            let res = client
+                .send_message(&message)
+                .unwrap()
+                .await
+                .expect("Failed to send_message");
+            let message = res
+                .to_message::<protos::test::TestMessage>()
+                .expect("[client] Failed to to_message");
+            println!("[client] Message received ({:?})", message);
+            assert_eq!(message.get_caption(), "server pong");
+            assert_eq!(message.get_seq(), 1);
+            println!("[client] Done");
+        }
+        wsmq_rs::server::run_with_config(
+            "0.0.0.0:65000",
+            move |addr, res, _| {
+                let mut message = res
+                    .to_message::<protos::test::TestMessage>()
+                    .expect("[server] Failed to to_message");
+                println!("[server] message received({:?}) : {} ", message, addr);
+                assert_eq!(message.get_caption(), "client ping");
+                assert_eq!(message.get_seq(), 1);
+                message.set_caption("server pong".to_string());
+                block_on(res.reply_message(&message)).expect("[server] Failed to reply_message");
+                println!("[server] send_message({:?}) : {} ", message, addr);
+                println!("[server] Done");
+            },
+            server::Config::<()>::new()
+                .set_pem(wsmq_rs::server::Pem {
+                    cert: "./tests/cert.pem".try_into().unwrap(),
+                    key: "./tests/key.pem".try_into().unwrap(),
+                })
+                .on_started(Box::new(move || {
+                    let svc = svc.clone();
+                    tokio::spawn(async move {
+                        test_client().await;
+                        svc.lock().unwrap().stop().unwrap();
+                    });
+                })),
+        )
+        .await
+        .unwrap();
+    });
+    match tokio::time::timeout(Duration::from_secs(100), f).await {
+        Ok(_) => {}
+        Err(err) => panic!("timeouted : {}", err),
+    };
 }
 
 #[tokio::test]
@@ -83,7 +148,7 @@ async fn basic_test() {
                 println!("[server] send_message({:?}) : {} ", message, addr);
                 println!("[server] Done");
             },
-            server::Config::<()>::new(1024 * 1024 * 16).on_started(Box::new(move || {
+            server::Config::<()>::new().on_started(Box::new(move || {
                 let svc = svc.clone();
                 tokio::spawn(async move {
                     test_client().await;
@@ -157,7 +222,7 @@ async fn basic_test_err() {
                 }
                 Err(err) => println!("[server] Failed to to_message : {}", err.cause()),
             },
-            server::Config::new(1024 * 1024 * 16)
+            server::Config::new()
                 .on_started(Box::new(move || {
                     println!("[server] Started");
                     let svc = svc.clone();
@@ -201,9 +266,11 @@ async fn send_large_message_test() {
             ) {
                 let client = wsmq_rs::client::connect_with_config(
                     "ws://127.0.0.1:65000",
-                    client::Config::new(1024 * 1024 * 4).on_error(Box::new(|err| {
-                        println!("[client] on_error : {}", err);
-                    })),
+                    client::Config::new()
+                        .set_bandwidth(1024 * 1024 * 4)
+                        .on_error(Box::new(|err| {
+                            println!("[client] on_error : {}", err);
+                        })),
                 )
                 .await
                 .expect("[client] Failed to client::connect");
@@ -270,7 +337,8 @@ async fn send_large_message_test() {
                     println!("[server] Done");
                     svc.lock().unwrap().stop().unwrap();
                 },
-                server::Config::<()>::new(1024 * 1024 * 4)
+                server::Config::<()>::new()
+                    .set_bandwidth(1024 * 1024 * 4)
                     .on_started(Box::new(move || {
                         let svc = svc1.clone();
                         let inst = inst.clone();
@@ -310,7 +378,8 @@ async fn send_large_message_ping_pong_test() {
         async fn test_client(test_data: Vec<u8>) {
             let client = wsmq_rs::client::connect_with_config(
                 "ws://127.0.0.1:65000",
-                client::Config::new(1024 * 1024 * 4)
+                client::Config::new()
+                    .set_bandwidth(1024 * 1024 * 4)
                     .on_progress(Box::new(|ctx| {
                         println!(
                             "[client] {:?} : {}/{}",
@@ -383,7 +452,7 @@ async fn send_large_message_ping_pong_test() {
                 );
                 println!("[server] Done");
             },
-            server::Config::<()>::new(1024 * 1024 * 16)
+            server::Config::<()>::new()
                 .on_started(Box::new(move || {
                     let svc = svc.clone();
                     let test_data = test_data2.to_vec();
@@ -465,7 +534,7 @@ async fn context_test() {
                 println!("[server] send_message({:?}) : {} ", message, addr);
                 println!("[server] Done");
             },
-            server::Config::new(1024 * 1024 * 16)
+            server::Config::new()
                 .on_started(Box::new(move || {
                     tokio::spawn(async move {
                         test_client().await;
@@ -572,7 +641,7 @@ async fn context_test_with_thread() {
                     });
                 });
             },
-            server::Config::new(1024 * 1024 * 16)
+            server::Config::new()
                 .on_started(Box::new(move || {
                     tokio::spawn(async move {
                         test_client().await;
@@ -630,9 +699,11 @@ async fn complex_test() {
             // connect to server
             match wsmq_rs::client::connect_with_config(
                 "ws://127.0.0.1:65002",
-                client::Config::new(1024 * 1024 * 4).on_error(Box::new(|err| {
-                    println!("[client] on_error : {}", err);
-                })),
+                client::Config::new()
+                    .set_bandwidth(1024 * 1024 * 4)
+                    .on_error(Box::new(|err| {
+                        println!("[client] on_error : {}", err);
+                    })),
             )
             .await
             {
@@ -798,7 +869,7 @@ async fn complex_test() {
                 }
                 Err(err) => println!("[server] Failed to to_message : {}", err.cause()),
             },
-            server::Config::new(1024 * 1024 * 16)
+            server::Config::new()
                 .on_started(Box::new(move || {
                     println!("[server] Started");
                     let svc = svc.clone();

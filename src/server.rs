@@ -25,19 +25,28 @@ pub type OnProgress<Context> = Box<dyn Fn(&ProgressContext, &mut Context) + Send
 pub type OnError<Context> =
     Box<dyn Fn(Box<dyn std::error::Error>, Option<&mut Context>) + Send + Sync>;
 
+pub struct Pem {
+    pub cert: std::path::PathBuf,
+    pub key: std::path::PathBuf,
+}
+
+pub static DEFAULT_BANDWIDTH: usize = 1024 * 1024 * 16;
+
 pub struct Config<Context> {
-    pub bandwidth: usize,
-    pub on_started: Option<OnStarted>,
-    pub on_connect: Option<OnConnect<Context>>,
-    pub on_disconnect: Option<OnDisconnect<Context>>,
-    pub on_progress: Option<OnProgress<Context>>,
-    pub on_error: Option<OnError<Context>>,
+    bandwidth: usize,
+    pem: Option<Pem>,
+    on_started: Option<OnStarted>,
+    on_connect: Option<OnConnect<Context>>,
+    on_disconnect: Option<OnDisconnect<Context>>,
+    on_progress: Option<OnProgress<Context>>,
+    on_error: Option<OnError<Context>>,
 }
 
 impl<Context> Config<Context> {
-    pub fn new(bandwidth: usize) -> Self {
+    pub fn new() -> Self {
         Config {
-            bandwidth,
+            bandwidth: DEFAULT_BANDWIDTH,
+            pem: None,
             on_started: None,
             on_connect: None,
             on_disconnect: None,
@@ -45,6 +54,17 @@ impl<Context> Config<Context> {
             on_error: None,
         }
     }
+
+    pub fn set_bandwidth(mut self, bandwidth: usize) -> Self {
+        self.bandwidth = bandwidth;
+        self
+    }
+
+    pub fn set_pem(mut self, pem: Pem) -> Self {
+        self.pem = Some(pem);
+        self
+    }
+
     define_set_callback!(on_started, OnStarted);
     define_set_callback!(on_disconnect, OnDisconnect<Context>);
     define_set_callback!(on_error, OnError<Context>);
@@ -111,8 +131,33 @@ where
         }
     };
 
+    let acceptor = if let Some(ref config) = config {
+        if let Some(ref pem) = config.pem {
+            let mut tls_config = ServerConfig::new(NoClientAuth::new());
+            let cert_file = &mut BufReader::new(File::open(&pem.cert).unwrap());
+            let key_file = &mut BufReader::new(File::open(&pem.key).unwrap());
+            let cert_chain = certs(cert_file).unwrap();
+            let mut keys = rsa_private_keys(key_file).unwrap();
+            tls_config
+                .set_single_cert(cert_chain, keys.remove(0))
+                .unwrap();
+            Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_config)))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    use std::fs::File;
+    use std::io::BufReader;
+    use tokio_rustls::rustls::{
+        internal::pemfile::{certs, rsa_private_keys},
+        NoClientAuth, ServerConfig,
+    };
+
     match tokio::net::TcpListener::bind(addr).await {
-        Ok(socket) => {
+        Ok(listener) => {
             let config = Arc::new(config);
             let on_message = Arc::new(on_message);
             if let Some(config) = config.as_ref() {
@@ -120,86 +165,106 @@ where
                     on_started();
                 }
             }
-            while let Ok((stream, addr)) = socket.accept().await {
+            while let Ok((stream, addr)) = listener.accept().await {
                 let config = config.clone();
                 let on_message = on_message.clone();
-                tokio::spawn(async move {
-                    match tokio_tungstenite::accept_async(stream).await {
-                        Ok(stream) => {
-                            let (tx, rx) = unbounded();
-                            let shared = Arc::new(SharedData::new(
-                                if let Some(config) = config.as_ref() {
-                                    config.bandwidth
-                                } else {
-                                    1024 * 1024 * 16
-                                },
-                                tx,
-                            ));
-                            let message_contexts = Arc::new(Mutex::new(HashMap::new()));
-                            let mut context: Context = if let Some(config) = config.as_ref() {
-                                if let Some(ref on_connect) = config.on_connect {
-                                    on_connect(addr)
+                let acceptor = acceptor.clone();
+
+                macro_rules! process_stream {
+                    ($stream:ident) => {
+                        match tokio_tungstenite::accept_async($stream).await {
+                            Ok(stream) => {
+                                let (tx, rx) = unbounded();
+                                let shared = Arc::new(SharedData::new(
+                                    if let Some(config) = config.as_ref() {
+                                        config.bandwidth
+                                    } else {
+                                        1024 * 1024 * 16
+                                    },
+                                    tx,
+                                ));
+                                let message_contexts = Arc::new(Mutex::new(HashMap::new()));
+                                let mut context: Context = if let Some(config) = config.as_ref() {
+                                    if let Some(ref on_connect) = config.on_connect {
+                                        on_connect(addr)
+                                    } else {
+                                        unsafe { std::mem::zeroed() }
+                                    }
                                 } else {
                                     unsafe { std::mem::zeroed() }
-                                }
-                            } else {
-                                unsafe { std::mem::zeroed() }
-                            };
+                                };
 
-                            let (write, read) = stream.split();
-                            let read = read.try_for_each(|message| {
-                                let shared = shared.clone();
-                                let mut canceled = false;
-                                message_dispatch!(
-                                    message_contexts,
-                                    &message.into_data(),
-                                    |uuid, message| {
-                                        (on_message)(
-                                            addr,
-                                            Response::new(uuid, message, shared.clone()),
-                                            &mut context,
-                                        );
-                                    },
-                                    |prg_ctx| {
-                                        if let Some(config) = config.as_ref() {
-                                            if let Some(ref on_progress) = config.on_progress {
-                                                on_progress(prg_ctx, &mut context);
+                                let (write, read) = stream.split();
+                                let read = read.try_for_each(|message| {
+                                    let shared = shared.clone();
+                                    let mut canceled = false;
+                                    message_dispatch!(
+                                        message_contexts,
+                                        &message.into_data(),
+                                        |uuid, message| {
+                                            (on_message)(
+                                                addr,
+                                                Response::new(uuid, message, shared.clone()),
+                                                &mut context,
+                                            );
+                                        },
+                                        |prg_ctx| {
+                                            if let Some(config) = config.as_ref() {
+                                                if let Some(ref on_progress) = config.on_progress {
+                                                    on_progress(prg_ctx, &mut context);
+                                                }
                                             }
-                                        }
-                                    },
-                                    |err| {
-                                        if let Some(config) = config.as_ref() {
-                                            if let Some(ref on_error) = config.on_error {
-                                                on_error(Box::new(err), Some(&mut context));
+                                        },
+                                        |err| {
+                                            if let Some(config) = config.as_ref() {
+                                                if let Some(ref on_error) = config.on_error {
+                                                    on_error(Box::new(err), Some(&mut context));
+                                                }
                                             }
+                                        },
+                                        |_| {
+                                            canceled = true;
                                         }
-                                    },
-                                    |_| { 
-                                        canceled = true;
-                                    }
-                                );
-                                if canceled {
-                                    return future::err::<(), tokio_tungstenite::tungstenite::Error>(
-                                        tokio_tungstenite::tungstenite::Error::ConnectionClosed,
                                     );
+                                    if canceled {
+                                        return future::err::<
+                                            (),
+                                            tokio_tungstenite::tungstenite::Error,
+                                        >(
+                                            tokio_tungstenite::tungstenite::Error::ConnectionClosed,
+                                        );
+                                    }
+                                    future::ok(())
+                                });
+                                let write = rx.map(Ok).forward(write);
+                                future::select(read, write).await;
+                                if let Some(config) = config.as_ref() {
+                                    if let Some(ref on_disconnect) = config.on_disconnect {
+                                        on_disconnect(addr, &mut context);
+                                    }
                                 }
-                                future::ok(())
-                            });
-                            let write = rx.map(Ok).forward(write);
-                            future::select(read, write).await;
-                            if let Some(config) = config.as_ref() {
-                                if let Some(ref on_disconnect) = config.on_disconnect {
-                                    on_disconnect(addr, &mut context);
+                            }
+                            Err(err) => {
+                                if let Some(config) = config.as_ref() {
+                                    if let Some(ref on_error) = config.on_error {
+                                        on_error(Box::new(err), None);
+                                    }
                                 }
                             }
                         }
-                        Err(err) => {
-                            if let Some(config) = config.as_ref() {
-                                if let Some(ref on_error) = config.on_error {
-                                    on_error(Box::new(err), None);
-                                }
+                    };
+                }
+
+                tokio::spawn(async move {
+                    if let Some(acceptor) = acceptor {
+                        match acceptor.accept(stream).await {
+                            Ok(stream) => {
+                                process_stream!(stream);
                             }
+                            Err(_) => {}
                         }
+                    } else {
+                        process_stream!(stream);
                     }
                 });
             }
