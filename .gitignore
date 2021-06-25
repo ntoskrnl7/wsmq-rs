@@ -10,4 +10,4 @@ Cargo.lock
 **/*.rs.bk
 .vscode/**
 .vs/**
-/tests/protos/*.rs
+**/protos/**.rs
