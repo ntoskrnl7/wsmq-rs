@@ -1,6 +1,6 @@
 [package]
 name = "wsmq-rs"
-version = "0.1.0"
+version = "0.2.0"
 description = "A simple messaging library based on websockets and protocol buffers."
 authors = ["Jung-Kwang Lee <ntoskrnl7@gmail.com>"]
 edition = "2018"
