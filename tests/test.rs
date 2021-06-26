@@ -50,7 +50,7 @@ async fn basic_wss_test() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq_rs::client::connect_with_config(
-                "wss://localhost:65000",
+                "wss://127.0.0.1:65000",
                 wsmq_rs::client::Config::new().no_certificate_verification(),
             )
             .await
@@ -88,10 +88,10 @@ async fn basic_wss_test() {
                 println!("[server] Done");
             },
             server::Config::<()>::new()
-                .set_pem(wsmq_rs::server::Pem {
-                    cert: "./tests/cert.pem".try_into().unwrap(),
-                    key: "./tests/key.pem".try_into().unwrap(),
-                })
+                .set_key(wsmq_rs::server::Key::from_pkcs12(
+                    "./tests/certificate.pfx".try_into().unwrap(),
+                    "test",
+                ))
                 .on_started(Box::new(move || {
                     let svc = svc.clone();
                     tokio::spawn(async move {

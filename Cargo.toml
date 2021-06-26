@@ -1,6 +1,6 @@
 [package]
 name = "wsmq-rs"
-version = "0.2.0"
+version = "0.3.0"
 description = "A simple messaging library based on websockets and protocol buffers."
 authors = ["Jung-Kwang Lee <ntoskrnl7@gmail.com>"]
 edition = "2018"
@@ -17,9 +17,8 @@ futures-channel = "0.3.15"
 
 url = { version="2.2.2", features=["serde"] }
 tokio = { version="1.6.1", features=["sync", "rt", "time", "rt-multi-thread", "macros"] }
-tokio-rustls = "0.22.0"
-tokio-tungstenite = { version="0.14.0", features=["connect", "rustls", "rustls-tls"] }
-rustls = { version="0.19.1", features=["dangerous_configuration"] }
+tokio-native-tls = "0.3.0"
+tokio-tungstenite = { version="0.14.0", features=["connect", "native-tls"] }
 protobuf = { version="2.23.0", features=["with-bytes"] }
 snap = "1.0.5"
 

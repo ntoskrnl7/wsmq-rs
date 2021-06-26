@@ -18,22 +18,9 @@ use uuid::Uuid;
 type OnProgress = Box<dyn Fn(&crate::message::ProgressContext) + Send + Sync>;
 type OnError = Box<dyn Fn(Box<dyn std::error::Error>) + Send + Sync>;
 
-struct NoCertificateVerification {}
-impl rustls::ServerCertVerifier for NoCertificateVerification {
-    fn verify_server_cert(
-        &self,
-        _roots: &rustls::RootCertStore,
-        _presented_certs: &[rustls::Certificate],
-        _dns_name: tokio_rustls::webpki::DNSNameRef,
-        _ocsp_response: &[u8],
-    ) -> std::result::Result<rustls::ServerCertVerified, rustls::TLSError> {
-        Ok(rustls::ServerCertVerified::assertion())
-    }
-}
-
 pub struct Config {
     bandwidth: usize,
-    verifier: Option<Arc<dyn rustls::ServerCertVerifier>>,
+    accept_invalid_certs: bool,
     on_error: Option<OnError>,
     on_progress: Option<OnProgress>,
 }
@@ -44,7 +31,7 @@ impl Config {
     pub fn new() -> Self {
         Config {
             bandwidth: DEFAULT_BANDWIDTH,
-            verifier: None,
+            accept_invalid_certs: false,
             on_error: None,
             on_progress: None,
         }
@@ -56,12 +43,7 @@ impl Config {
     }
 
     pub fn no_certificate_verification(mut self) -> Self {
-        self.verifier = Some(Arc::new(NoCertificateVerification {}));
-        self
-    }
-
-    pub fn set_verifier(mut self, verifier: Arc<dyn rustls::ServerCertVerifier>) -> Self {
-        self.verifier = Some(verifier);
+        self.accept_invalid_certs = true;
         self
     }
 
@@ -157,16 +139,19 @@ where
     let socket = try_socket.map_err(tokio_tungstenite::tungstenite::error::Error::Io)?;
 
     let connector = if let Some("wss") = request.uri().scheme_str() {
-        let mut con_config = rustls::ClientConfig::new();
+        use tokio_native_tls::native_tls::TlsConnector;
+
+        let mut connector = TlsConnector::builder();
+
         if let Some(config) = config {
-            if let Some(ref verifier) = config.verifier {
-                let mut cfg = rustls::DangerousClientConfig {
-                    cfg: &mut con_config,
-                };
-                cfg.set_certificate_verifier(verifier.clone());
+            if config.accept_invalid_certs {
+                connector.danger_accept_invalid_certs(true);
+                connector.danger_accept_invalid_hostnames(true);
             }
         }
-        Some(tokio_tungstenite::Connector::Rustls(Arc::new(con_config)))
+        Some(tokio_tungstenite::Connector::NativeTls(
+            connector.build().unwrap(),
+        ))
     } else {
         None
     };

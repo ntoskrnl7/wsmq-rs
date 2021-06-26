@@ -25,16 +25,27 @@ pub type OnProgress<Context> = Box<dyn Fn(&ProgressContext, &mut Context) + Send
 pub type OnError<Context> =
     Box<dyn Fn(Box<dyn std::error::Error>, Option<&mut Context>) + Send + Sync>;
 
-pub struct Pem {
-    pub cert: std::path::PathBuf,
-    pub key: std::path::PathBuf,
+enum KeyData {
+    Pkcs12(std::path::PathBuf, String),
+}
+
+pub struct Key {
+    data: KeyData,
+}
+
+impl Key {
+    pub fn from_pkcs12(file: std::path::PathBuf, password: &str) -> Key {
+        Key {
+            data: KeyData::Pkcs12(file, password.to_string()),
+        }
+    }
 }
 
 pub static DEFAULT_BANDWIDTH: usize = 1024 * 1024 * 16;
 
 pub struct Config<Context> {
     bandwidth: usize,
-    pem: Option<Pem>,
+    key: Option<Key>,
     on_started: Option<OnStarted>,
     on_connect: Option<OnConnect<Context>>,
     on_disconnect: Option<OnDisconnect<Context>>,
@@ -46,7 +57,7 @@ impl<Context> Config<Context> {
     pub fn new() -> Self {
         Config {
             bandwidth: DEFAULT_BANDWIDTH,
-            pem: None,
+            key: None,
             on_started: None,
             on_connect: None,
             on_disconnect: None,
@@ -60,8 +71,8 @@ impl<Context> Config<Context> {
         self
     }
 
-    pub fn set_pem(mut self, pem: Pem) -> Self {
-        self.pem = Some(pem);
+    pub fn set_key(mut self, key: Key) -> Self {
+        self.key = Some(key);
         self
     }
 
@@ -132,28 +143,28 @@ where
     };
 
     let acceptor = if let Some(ref config) = config {
-        if let Some(ref pem) = config.pem {
-            let mut tls_config = ServerConfig::new(NoClientAuth::new());
-            let cert_file = &mut BufReader::new(File::open(&pem.cert).unwrap());
-            let key_file = &mut BufReader::new(File::open(&pem.key).unwrap());
-            let cert_chain = certs(cert_file).unwrap();
-            let mut keys = rsa_private_keys(key_file).unwrap();
-            tls_config
-                .set_single_cert(cert_chain, keys.remove(0))
-                .unwrap();
-            Some(tokio_rustls::TlsAcceptor::from(Arc::new(tls_config)))
+        if let Some(ref key) = config.key {
+            match &key.data {
+                KeyData::Pkcs12(file, password) => {
+                    use std::fs::File;
+                    use tokio_native_tls::native_tls::Identity;
+                    let mut file = File::open(&file).unwrap();
+                    let mut der = vec![];
+                    std::io::Read::read_to_end(&mut file, &mut der).unwrap();
+                    let pkcs12 = Identity::from_pkcs12(&der, &password).unwrap();
+                    let acceptor = tokio_native_tls::TlsAcceptor::from(
+                        tokio_native_tls::native_tls::TlsAcceptor::builder(pkcs12)
+                            .build()
+                            .unwrap(),
+                    );
+                    Some(Arc::new(acceptor))
+                }
+            }
         } else {
             None
         }
     } else {
         None
-    };
-
-    use std::fs::File;
-    use std::io::BufReader;
-    use tokio_rustls::rustls::{
-        internal::pemfile::{certs, rsa_private_keys},
-        NoClientAuth, ServerConfig,
     };
 
     match tokio::net::TcpListener::bind(addr).await {
