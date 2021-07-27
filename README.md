@@ -1,5 +1,7 @@
 # wsmq-rs
 
+[![Rust](https://github.com/ntoskrnl7/wsmq-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/ntoskrnl7/wsmq-rs/actions/workflows/rust.yml)
+
 A simple websocket messaging library based on protocol buffers.
 
 ## Example

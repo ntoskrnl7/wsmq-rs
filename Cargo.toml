@@ -18,7 +18,7 @@ futures-channel = "0.3.15"
 url = { version="2.2.2", features=["serde"] }
 tokio = { version="1.6.1", features=["sync", "rt", "time", "rt-multi-thread", "macros"] }
 tokio-native-tls = "0.3.0"
-tokio-tungstenite = { version="0.14.0", features=["connect", "native-tls"] }
+tokio-tungstenite = { version="0.15.0", features=["connect", "native-tls"] }
 protobuf = { version="2.23.0", features=["with-bytes"] }
 snap = "1.0.5"
 
