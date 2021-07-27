@@ -13,7 +13,7 @@ wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
     let mut recieved = res.to_vec().clone();
     tokio::spawn(async move {
         recieved.extend(&addr.port().to_le_bytes());
-        res.reply(recieved).await
+        res.reply(recieved).await;
     });
 })
 .await
@@ -35,6 +35,59 @@ println!("{:?}", recieved);
 
 ---
 
+### With protocol buffers
+#### Protocol buffers
+```proto
+syntax = "proto3";
+
+message RequestMessage {
+    string text = 1;
+}
+message ResponseMessage {
+    string text = 1;
+    bytes payload = 2;
+}
+```
+
+#### Server
+
+```rust
+wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
+    let mut message = res.to_message::<RequestMessage>().expect("[server] Failed to to_message");
+    tokio::spawn(async move {
+        let mut response_message = ResponseMessage::new();
+        response_message.set_text("response text".to_string());
+        response_message.set_payload(message.get_text().as_bytes().to_vec());
+        res.reply_message(&response_message).await;
+    });
+})
+.await
+.expect("[server] Failed to run");
+```
+
+#### Client
+
+```rust
+let client = wsmq_rs::client::connect("ws://127.0.0.1:8080")
+    .await
+    .expect("[client] Failed to connect");
+
+let mut message = RequestMessage::new();
+message.set_text("request text".to_string());
+
+let res = client.send_message(&message)
+    .expect("[client] Failed to send_message");
+    .await
+    .expect("[client] Failed to send_message");
+
+let message = res.to_message::<ResponseMessage>()
+    .expect("[client] Failed to to_message");
+
+println!("{:?}", message);
+```
+
+---
+
 ### With config
 
 #### Server with config
@@ -46,7 +99,7 @@ wsmq_rs::server::run_with_config(
         let mut recieved = res.to_vec().clone();
         tokio::spawn(async move {
             recieved.extend(&addr.port().to_le_bytes());
-            res.reply(recieved).await
+            res.reply(recieved).await;
         });
     },
     wsmq_rs::server::Config::<()>::new().set_bandwidth(1024 * 1024 * 6),
