@@ -10,8 +10,9 @@ fn main() {
         .inputs(&["./tests/protos/test.proto"])
         .include("./tests/protos")
         .run()
-        .expect("Codegen::run(test.proto) failed.");
+        .expect("Failed to Codegen::run(test.proto)");
 
+    std::fs::create_dir_all("./src/protos").expect("Failed to create_dir_all : ./src/protos");
     protobuf_codegen_pure::Codegen::new()
         .out_dir("./src/protos")
         .customize(protobuf_codegen_pure::Customize {
@@ -21,5 +22,5 @@ fn main() {
         .inputs(&["./protos/message.proto"])
         .include("./protos")
         .run()
-        .expect("Codegen::run(message.proto) failed.");
+        .expect("Failed Codegen::run(message.proto)");
 }
