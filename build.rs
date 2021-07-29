@@ -10,7 +10,7 @@ fn main() {
         .inputs(&["./tests/protos/test.proto"])
         .include("./tests/protos")
         .run()
-        .expect("Codegen failed.");
+        .expect("Codegen::run(test.proto) failed.");
 
     protobuf_codegen_pure::Codegen::new()
         .out_dir("./src/protos")
@@ -21,5 +21,5 @@ fn main() {
         .inputs(&["./protos/message.proto"])
         .include("./protos")
         .run()
-        .expect("Codegen failed.");
+        .expect("Codegen::run(message.proto) failed.");
 }
