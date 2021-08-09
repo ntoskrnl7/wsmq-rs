@@ -11,7 +11,7 @@ A simple websocket messaging library based on protocol buffers.
 #### Server
 
 ```rust
-wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
+wsmq::server::run("0.0.0.0:8080", |addr, res, _| {
     let mut recieved = res.to_vec().clone();
     tokio::spawn(async move {
         recieved.extend(&addr.port().to_le_bytes());
@@ -25,7 +25,7 @@ wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
 #### Client
 
 ```rust
-let client = wsmq_rs::client::connect("ws://127.0.0.1:8080")
+let client = wsmq::client::connect("ws://127.0.0.1:8080")
     .await
     .unwrap();
 client.send(vec![1, 2, 3, 4, 5]).unwrap();
@@ -38,7 +38,9 @@ println!("{:?}", recieved);
 ---
 
 ### With protocol buffers
+
 #### Protocol buffers
+
 ```proto
 syntax = "proto3";
 
@@ -51,10 +53,10 @@ message ResponseMessage {
 }
 ```
 
-#### Server
+#### Server with protocol buffers
 
 ```rust
-wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
+wsmq::server::run("0.0.0.0:8080", |addr, res, _| {
     let mut message = res.to_message::<RequestMessage>().expect("[server] Failed to to_message");
     tokio::spawn(async move {
         let mut response_message = ResponseMessage::new();
@@ -67,10 +69,10 @@ wsmq_rs::server::run("0.0.0.0:8080", |addr, res, _| {
 .expect("[server] Failed to run");
 ```
 
-#### Client
+#### Client with protocol buffers
 
 ```rust
-let client = wsmq_rs::client::connect("ws://127.0.0.1:8080")
+let client = wsmq::client::connect("ws://127.0.0.1:8080")
     .await
     .expect("[client] Failed to connect");
 
@@ -95,7 +97,7 @@ println!("{:?}", message);
 #### Server with config
 
 ```rust
-wsmq_rs::server::run_with_config(
+wsmq::server::run_with_config(
     "0.0.0.0:8080",
     |addr, res, _| {
         let mut recieved = res.to_vec().clone();
@@ -104,7 +106,7 @@ wsmq_rs::server::run_with_config(
             res.reply(recieved).await;
         });
     },
-    wsmq_rs::server::Config::<()>::new().set_bandwidth(1024 * 1024 * 6),
+    wsmq::server::Config::<()>::new().set_bandwidth(1024 * 1024 * 6),
 )
 .await
 .unwrap();
@@ -113,9 +115,9 @@ wsmq_rs::server::run_with_config(
 #### Client with config
 
 ```rust
-let client = wsmq_rs::client::connect_with_config(
+let client = wsmq::client::connect_with_config(
     "ws://127.0.0.1:8080",
-    wsmq_rs::client::Config::new().set_bandwidth(1024 * 1024 * 6),
+    wsmq::client::Config::new().set_bandwidth(1024 * 1024 * 6),
 )
 .await
 .unwrap();
@@ -140,7 +142,7 @@ struct Context {
     recieved: usize,
 }
 
-wsmq_rs::server::run_with_config(
+wsmq::server::run_with_config(
     "0.0.0.0:8080",
     |addr, res, context| {
         context.recieved += 1;
@@ -150,7 +152,7 @@ wsmq_rs::server::run_with_config(
             context.sent += 1;
         }
     },
-    wsmq_rs::server::Config::new()
+    wsmq::server::Config::new()
         set_bandwidth(1024),
         .on_connect(Box::new(|addr| {
             println!("connected ({})", addr);
@@ -185,9 +187,9 @@ wsmq_rs::server::run_with_config(
 #### Client with context
 
 ```rust
-let client = wsmq_rs::client::connect_with_config(
+let client = wsmq::client::connect_with_config(
     "ws://127.0.0.1:8080",
-    wsmq_rs::client::Config::new().set_bandwidth(1024),
+    wsmq::client::Config::new().set_bandwidth(1024),
 )
 .await
 .unwrap();

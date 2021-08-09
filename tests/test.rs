@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use wsmq_rs::{client, server};
+use wsmq::{client, server};
 
 mod protos {
     pub mod test;
@@ -49,9 +49,9 @@ macro_rules! define_test_future {
 async fn basic_wss_test() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
-            let client = wsmq_rs::client::connect_with_config(
+            let client = wsmq::client::connect_with_config(
                 "wss://127.0.0.1:65000",
-                wsmq_rs::client::Config::new().no_certificate_verification(),
+                wsmq::client::Config::new().no_certificate_verification(),
             )
             .await
             .expect("[client] Failed to client::connect");
@@ -73,7 +73,7 @@ async fn basic_wss_test() {
             assert_eq!(message.get_seq(), 1);
             println!("[client] Done");
         }
-        wsmq_rs::server::run_with_config(
+        wsmq::server::run_with_config(
             "0.0.0.0:65000",
             move |addr, res, _| {
                 let mut message = res
@@ -88,7 +88,7 @@ async fn basic_wss_test() {
                 println!("[server] Done");
             },
             server::Config::<()>::new()
-                .set_key(wsmq_rs::server::Key::from_pkcs12(
+                .set_key(wsmq::server::Key::from_pkcs12(
                     "./tests/certificate.pfx".try_into().unwrap(),
                     "test",
                 ))
@@ -113,7 +113,7 @@ async fn basic_wss_test() {
 async fn basic_test() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
-            let client = wsmq_rs::client::connect("ws://127.0.0.1:65000")
+            let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
                 .expect("[client] Failed to client::connect");
             let mut message = protos::test::TestMessage::new();
@@ -134,7 +134,7 @@ async fn basic_test() {
             assert_eq!(message.get_seq(), 1);
             println!("[client] Done");
         }
-        wsmq_rs::server::run_with_config(
+        wsmq::server::run_with_config(
             "0.0.0.0:65000",
             move |addr, res, _| {
                 let mut message = res
@@ -170,7 +170,7 @@ async fn basic_test_err() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             // connect to server
-            match wsmq_rs::client::connect("ws://127.0.0.1:65001").await {
+            match wsmq::client::connect("ws://127.0.0.1:65001").await {
                 Ok(client) => {
                     // generate message
                     let mut msg = protos::test::TestMessage::new();
@@ -203,7 +203,7 @@ async fn basic_test_err() {
             }
         }
 
-        if let Err(err) = wsmq_rs::server::run_with_config(
+        if let Err(err) = wsmq::server::run_with_config(
             "0.0.0.0:65001",
             move |addr, res, _| match res.to_message::<protos::test::TestMessage>() {
                 Ok(mut message) => {
@@ -264,7 +264,7 @@ async fn send_large_message_test() {
                 svc: Arc<Mutex<service_rs::service::Service>>,
                 inst: Arc<service_rs::service::ServiceInstance>,
             ) {
-                let client = wsmq_rs::client::connect_with_config(
+                let client = wsmq::client::connect_with_config(
                     "ws://127.0.0.1:65000",
                     client::Config::new()
                         .set_bandwidth(1024 * 1024 * 4)
@@ -319,7 +319,7 @@ async fn send_large_message_test() {
             println!("[common] Generate test_data done.");
 
             let svc1 = svc.clone();
-            wsmq_rs::server::run_with_config(
+            wsmq::server::run_with_config(
                 "0.0.0.0:65000",
                 move |addr, res, _| {
                     let message = res
@@ -376,7 +376,7 @@ async fn send_large_message_ping_pong_test() {
     let rt = tokio::runtime::Runtime::new().unwrap();
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client(test_data: Vec<u8>) {
-            let client = wsmq_rs::client::connect_with_config(
+            let client = wsmq::client::connect_with_config(
                 "ws://127.0.0.1:65000",
                 client::Config::new()
                     .set_bandwidth(1024 * 1024 * 4)
@@ -427,7 +427,7 @@ async fn send_large_message_ping_pong_test() {
                 .collect::<Vec<u8>>(),
         );
         let test_data2 = test_data.clone();
-        wsmq_rs::server::run_with_config(
+        wsmq::server::run_with_config(
             "0.0.0.0:65000",
             move |addr, res, _| {
                 let mut message = res
@@ -489,7 +489,7 @@ async fn context_test() {
 
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
-            let client = wsmq_rs::client::connect("ws://127.0.0.1:65000")
+            let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
                 .expect("[client] Failed to client::connect");
             let mut message = protos::test::TestMessage::new();
@@ -510,7 +510,7 @@ async fn context_test() {
             assert_eq!(message.get_seq(), 1);
             println!("[client] Done");
         }
-        wsmq_rs::server::run_with_config(
+        wsmq::server::run_with_config(
             "0.0.0.0:65000",
             move |addr, res, ctx| {
                 let x = match addr {
@@ -589,7 +589,7 @@ async fn context_test_with_thread() {
     }
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
-            let client = wsmq_rs::client::connect("ws://127.0.0.1:65000")
+            let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
                 .expect("[client] Failed to client::connect");
             let mut message = protos::test::TestMessage::new();
@@ -610,7 +610,7 @@ async fn context_test_with_thread() {
             assert_eq!(message.get_seq(), 1);
             println!("[client] Done");
         }
-        wsmq_rs::server::run_with_config(
+        wsmq::server::run_with_config(
             "0.0.0.0:65000",
             move |addr, res, ctx| {
                 let ctx = ctx.clone();
@@ -697,7 +697,7 @@ async fn complex_test() {
     let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
         async fn test_client() {
             // connect to server
-            match wsmq_rs::client::connect_with_config(
+            match wsmq::client::connect_with_config(
                 "ws://127.0.0.1:65002",
                 client::Config::new()
                     .set_bandwidth(1024 * 1024 * 4)
@@ -841,7 +841,7 @@ async fn complex_test() {
             }
         }
 
-        if let Err(err) = wsmq_rs::server::run_with_config(
+        if let Err(err) = wsmq::server::run_with_config(
             "0.0.0.0:65002",
             move |addr, res, ctx| match res.to_message::<protos::test::TestMessage>() {
                 Ok(mut message) => {
