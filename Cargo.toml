@@ -27,4 +27,4 @@ protobuf-codegen-pure = "2.3.1"
 protoc-rust = "2.23.0"
 
 [dev-dependencies]
-service-rs = { git="https://github.com/ntoskrnl7/service-rs.git", branch="main" }
+service = { git="https://github.com/ntoskrnl7/service-rs.git", branch="main" }

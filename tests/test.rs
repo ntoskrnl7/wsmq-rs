@@ -13,22 +13,22 @@ mod protos {
 
 macro_rules! define_test_future {
     ($test_code:expr) => {{
-        let (svc, inst) = service_rs::service::Service::new();
+        let (svc, inst) = service::Service::new();
         let svc = Arc::new(Mutex::new(svc));
         let inst1 = inst.clone();
         let test_server = async move { $test_code(svc, inst1).await };
         tokio::runtime::Handle::current().spawn_blocking(move || {
             match inst.wait_future(tokio::spawn(test_server)) {
                 Ok(event) => match event {
-                    service_rs::service::Event::StatusChanged(status) => match status {
-                        service_rs::service::ServiceStatus::Stopped() => {
+                    service::Event::StatusChanged(status) => match status {
+                        service::ServiceStatus::Stopped() => {
                             println!("Service stopped");
                             return;
                         }
-                        service_rs::service::ServiceStatus::Paused(_) => {}
-                        service_rs::service::ServiceStatus::Running() => {}
+                        service::ServiceStatus::Paused(_) => {}
+                        service::ServiceStatus::Running() => {}
                     },
-                    service_rs::service::Event::Future(result) => match result {
+                    service::Event::Future(result) => match result {
                         Ok(result) => {
                             println!("Result : {:?}", result);
                         }
@@ -47,7 +47,7 @@ macro_rules! define_test_future {
 
 #[tokio::test]
 async fn basic_wss_test() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq::client::connect_with_config(
                 "wss://127.0.0.1:65000",
@@ -111,7 +111,7 @@ async fn basic_wss_test() {
 
 #[tokio::test]
 async fn basic_test() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
@@ -167,7 +167,7 @@ async fn basic_test() {
 
 #[tokio::test]
 async fn basic_test_err() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             // connect to server
             match wsmq::client::connect("ws://127.0.0.1:65001").await {
@@ -256,13 +256,13 @@ async fn basic_test_err() {
 #[tokio::test]
 async fn send_large_message_test() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let f = define_test_future!(
-        |svc: Arc<Mutex<service_rs::service::Service>>,
-         inst: Arc<service_rs::service::ServiceInstance>| async move {
+    let f =
+        define_test_future!(|svc: Arc<Mutex<service::Service>>,
+                             inst: Arc<service::ServiceInstance>| async move {
             async fn test_client(
                 test_data: Vec<u8>,
-                svc: Arc<Mutex<service_rs::service::Service>>,
-                inst: Arc<service_rs::service::ServiceInstance>,
+                svc: Arc<Mutex<service::Service>>,
+                inst: Arc<service::ServiceInstance>,
             ) {
                 let client = wsmq::client::connect_with_config(
                     "ws://127.0.0.1:65000",
@@ -363,8 +363,7 @@ async fn send_large_message_test() {
             )
             .await
             .unwrap();
-        }
-    );
+        });
     match tokio::time::timeout(Duration::from_secs(60), f).await {
         Ok(_) => {}
         Err(err) => panic!("timeouted : {}", err),
@@ -374,7 +373,7 @@ async fn send_large_message_test() {
 #[tokio::test]
 async fn send_large_message_ping_pong_test() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client(test_data: Vec<u8>) {
             let client = wsmq::client::connect_with_config(
                 "ws://127.0.0.1:65000",
@@ -487,7 +486,7 @@ async fn context_test() {
         pub number: u16,
     }
 
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
@@ -587,7 +586,7 @@ async fn context_test_with_thread() {
     struct TestContext {
         pub number: u16,
     }
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             let client = wsmq::client::connect("ws://127.0.0.1:65000")
                 .await
@@ -694,7 +693,7 @@ async fn context_test_with_thread() {
 
 #[tokio::test]
 async fn complex_test() {
-    let f = define_test_future!(|svc: Arc<Mutex<service_rs::service::Service>>, _| async {
+    let f = define_test_future!(|svc: Arc<Mutex<service::Service>>, _| async {
         async fn test_client() {
             // connect to server
             match wsmq::client::connect_with_config(
